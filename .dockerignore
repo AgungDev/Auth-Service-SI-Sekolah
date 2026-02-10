@@ -1,0 +1,51 @@
+# Patterns to ignore when building Docker image
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Build artifacts
+bin/
+dist/
+*.exe
+*.dll
+*.so
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.iml
+
+# Test coverage
+*.out
+coverage.txt
+
+# Dependencies (if not committed)
+vendor/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Documentation
+*.md
+docs/
+
+# Scripts
+scripts/
+Makefile
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.travis.yml
+
+# Docker files (don't need these in the image)
+docker-compose*.yml
+Dockerfile.dev
