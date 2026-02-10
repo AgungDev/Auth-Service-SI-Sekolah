@@ -1,27 +1,28 @@
-# Auth Service – Sistem Informasi Sekolah
+# Auth Service – Multi-Tenant School System
 
 Auth Service adalah **microservice autentikasi & otorisasi**  
 untuk Sistem Informasi Sekolah berbasis **multi-tenant (sekolah)**.
 
 Service ini bertanggung jawab penuh atas:
 
-- User
 - Tenant (sekolah)
-- Role
-- Permission
-- JWT sebagai kontrak antar service
+- User
+- Role & Permission
+- Token (Access & Refresh)
+- Audit log aktivitas sensitif
+- Boundary otoritas sistem
 
-⚠️ Repo ini **HANYA** auth-service.  
-Service lain (ARKAS, Akademik, dll) **tidak ada di repo ini**.
+⚠️ Repository ini **HANYA** berisi auth-service.  
+Tidak ada logic ARKAS atau service lain di sini.
 
 ---
 
-## 🎯 Tujuan Dibuat
+## 🎯 Tujuan Service
 
-- Menjadi **single source of truth** identitas user
-- Menghasilkan JWT berisi konteks tenant & permission
-- Menjadi fondasi untuk microservice lain di masa depan
-- Studi kasus pembelajaran microservice nyata (bukan dummy)
+- Menjadi **single source of truth** untuk identitas user
+- Menyediakan **kontrak JWT ringan** untuk service lain
+- Mendukung arsitektur microservice secara aman
+- Siap dipakai sebagai fondasi produk SaaS
 
 ---
 
@@ -31,13 +32,62 @@ Service lain (ARKAS, Akademik, dll) **tidak ada di repo ini**.
 
 - 1 tenant = 1 sekolah
 - Semua user **SELALU** terikat ke satu tenant
-- Tenant **tidak boleh** sharing data
+- Tidak ada data sharing antar tenant
 
-### JWT sebagai Kontrak
+### Token Strategy
 
-- Auth Service mengeluarkan JWT
-- Service lain **percaya** JWT
-- Auth Service **TIDAK DIPANGGIL** di setiap request service lain
+Auth Service menggunakan **2 jenis token**:
+
+- **Access Token** → pendek, dipakai antar service
+- **Refresh Token** → panjang, hanya ke auth-service
+
+Service lain **TIDAK PERNAH** menerima refresh token.
+
+---
+
+## 🔐 Token Design
+
+### Access Token (JWT – Ringan)
+
+Digunakan oleh service lain (ARKAS, dll).
+
+```json
+{
+  "sub": "user-id",
+  "tenant_id": "school-id",
+  "roles": ["BENDAHARA"],
+  "tenant_status": "ACTIVE",
+  "exp": 1710000000
+}
+```
+
+Prinsip:
+
+- **TIDAK menyimpan permission detail**
+- Role dipakai sebagai identifier
+- Permission dimapping di masing-masing service
+
+Tujuan:
+
+- JWT kecil
+- Performa stabil
+- Mudah di-cache
+
+---
+
+### Refresh Token
+
+- Disimpan di database auth-service
+- Terkait dengan user & tenant
+- Bisa direvoke kapan saja
+
+Contoh atribut:
+
+- token
+- user_id
+- tenant_id
+- expires_at
+- revoked_at
 
 ---
 
@@ -46,94 +96,84 @@ Service lain (ARKAS, Akademik, dll) **tidak ada di repo ini**.
 Auth Service menggunakan **Clean Architecture**.
 
 ```
-
 cmd/
-api/
+  api/
 internal/
-entity/
-usecase/
-repository/
-handler/
-middleware/
+  entity/
+  usecase/
+  repository/
+  handler/
+  middleware/
 pkg/
-config/
-logger/
-
+  config/
+  logger/
 ```
 
 ### Aturan Boundary (WAJIB)
 
 - `entity` → tidak tahu HTTP / DB
 - `usecase` → tidak tahu framework
-- `handler` → boleh framework
-- Tidak ada logic bisnis di handler
+- `handler` → hanya adapter
+- Logic bisnis **tidak boleh** di handler
 
 ---
 
-## 👤 Role (Global)
+## 👤 Role & Boundary Otoritas
 
-| Role           | Scope  | Deskripsi          |
-| -------------- | ------ | ------------------ |
-| SUPER_ADMIN    | System | Owner / SaaS admin |
-| ADMIN_SEKOLAH  | Tenant | Admin sekolah      |
-| BENDAHARA      | Tenant | Pengelola keuangan |
-| KEPALA_SEKOLAH | Tenant | Approver           |
-| OPERATOR       | Tenant | Input data         |
+### System Level (NON-SEKOLAH)
 
----
+#### SYSTEM_OWNER
 
-## 🔑 Permission (Auth Service)
+- Akses internal
+- Tidak login via API publik
+- Mengelola sistem SaaS
 
-Format permission:
+#### SUPER_ADMIN
 
-```
+- Membuat tenant
+- Suspend / activate tenant
+- Reset admin sekolah
 
-{resource}.{action}
+⚠️ SUPER_ADMIN:
 
-```
-
-### Daftar Permission
-
-| Permission      | Deskripsi           |
-| --------------- | ------------------- |
-| tenant.create   | Buat sekolah        |
-| tenant.update   | Update sekolah      |
-| tenant.suspend  | Suspend sekolah     |
-| user.create     | Tambah user         |
-| user.update     | Edit user           |
-| user.delete     | Hapus user          |
-| role.assign     | Assign role ke user |
-| permission.read | Lihat permission    |
-
-> Permission service lain (ARKAS, dll) **TIDAK DIDEFINISIKAN DI SINI**  
-> tapi **DIPRODUKSI** oleh Auth Service.
+- Tidak digunakan operasional harian
+- Tidak mengelola data sekolah
 
 ---
 
-## 🔐 JWT Payload (Kontrak Resmi)
+### Tenant Level (Sekolah)
 
-```json
-{
-  "sub": "user-id",
-  "tenant_id": "school-id",
-  "roles": ["bendahara"],
-  "permissions": ["transaction.create", "transaction.update", "report.view"],
-  "exp": 1710000000
-}
-```
+| Role           | Deskripsi           |
+| -------------- | ------------------- |
+| ADMIN_SEKOLAH  | Admin utama sekolah |
+| BENDAHARA      | Pengelola keuangan  |
+| KEPALA_SEKOLAH | Approver & pengawas |
+| OPERATOR       | Input data          |
 
-Field wajib:
+---
 
-- `sub`
-- `tenant_id`
-- `permissions`
+## 🔑 Permission Strategy
 
 Auth Service:
 
-- Menghasilkan token
-- Menentukan isi token
-  Service lain:
-- Hanya membaca & memverifikasi
+- Menyimpan **role & permission mapping**
+- Menghasilkan token berbasis **role**
+
+Service lain:
+
+- Memetakan `role → permission` secara lokal
+- Tidak memanggil auth-service
+
+Contoh permission format:
+
+```
+{resource}.{action}
+```
+
+Contoh:
+
+- transaction.create
+- report.export
 
 ---
 
@@ -141,64 +181,125 @@ Auth Service:
 
 ### POST /login
 
-Login user dan generate JWT.
-
-Request:
-
-```json
-{
-  "email": "user@school.sch.id",
-  "password": "secret"
-}
-```
+- Validasi user
+- Menghasilkan access token & refresh token
 
 Response:
 
 ```json
 {
-  "access_token": "jwt-token",
-  "expires_in": 3600
+  "access_token": "jwt",
+  "refresh_token": "opaque-token",
+  "expires_in": 1800
 }
 ```
 
 ---
 
+### POST /refresh
+
+- Mengganti access token
+- Refresh token **WAJIB valid & belum direvoke**
+
+---
+
 ### POST /tenants
 
-Buat tenant (sekolah).
-
-> Biasanya hanya SUPER_ADMIN.
+- Buat tenant (SUPER_ADMIN only)
 
 ---
 
 ### POST /users
 
-Buat user dalam tenant.
+- Buat user dalam tenant
 
 ---
 
-## 🗄️ Database
+## 🗄️ Database Design
 
-Auth Service memiliki **database sendiri**.
+### auth_db Tables
 
-### Tabel
+#### tenants
 
-- tenants
-- users
-- roles
-- permissions
-- role_permissions
-- user_roles
+- id
+- name
+- status (ACTIVE | SUSPENDED | ARCHIVED)
 
-⚠️ Tidak ada service lain yang boleh mengakses database ini.
+---
+
+#### users
+
+- id
+- tenant_id
+- email
+- password_hash
+- status
+
+---
+
+#### roles
+
+- id
+- name
+- scope (SYSTEM | TENANT)
+
+---
+
+#### permissions
+
+- id
+- code
+- description
+
+---
+
+#### role_permissions
+
+- role_id
+- permission_id
+
+---
+
+#### user_roles
+
+- user_id
+- role_id
+
+---
+
+#### refresh_tokens
+
+- token
+- user_id
+- tenant_id
+- expires_at
+- revoked_at
+
+---
+
+#### audit_logs
+
+Digunakan untuk **traceability & compliance**.
+
+Field:
+
+- id
+- actor_id
+- tenant_id
+- action
+- target
+- metadata (JSON)
+- created_at
+
+Contoh action:
+
+- USER_CREATED
+- ROLE_ASSIGNED
+- TENANT_SUSPENDED
 
 ---
 
 ## 🐳 Container
-
-### Dockerfile (Golang)
-
-Auth Service dijalankan sebagai container mandiri.
 
 ### Docker Compose (Ready to Run)
 
@@ -236,7 +337,7 @@ services:
 docker compose up --build
 ```
 
-Auth Service akan berjalan di:
+Auth Service tersedia di:
 
 ```
 http://localhost:8001
@@ -246,27 +347,29 @@ http://localhost:8001
 
 ## 🚫 Anti-Pattern (DILARANG)
 
+- Menaruh permission detail di JWT
 - Share database dengan service lain
-- Hardcode role di handler
-- Call auth-service di setiap request service lain
-- Mengabaikan tenant_id
+- SUPER_ADMIN dipakai user sekolah
+- Tidak mencatat audit log
+- Refresh token dikirim ke service lain
 
 ---
 
 ## 🎯 Target Pembelajaran
 
-Setelah auth-service ini selesai:
+Dengan auth-service ini:
 
-- Siap dipakai oleh service lain (ARKAS, dll)
-- Boundary antar service jelas
-- JWT dipahami sebagai kontrak, bukan sekadar token
-- Siap naik ke microservice level berikutnya
+- Boundary microservice jelas
+- Token lifecycle dipahami
+- Role ≠ Permission
+- Sistem siap dikembangkan ke ARKAS & modul lain
 
 ---
 
-## 📝 Catatan Jujur
+## 📝 Catatan Akhir
 
-Auth Service ini **tidak dibuat untuk pamer arsitektur**,
-tapi untuk **bertahan saat sistem tumbuh**.
+Auth Service ini **dibuat untuk tumbuh**,
+bukan untuk cepat-cepat jadi demo.
 
-Kalau auth berantakan, semua service ikut tumbang.
+Kalau auth rapi,
+service lain boleh ribet — sistem tetap hidup.
