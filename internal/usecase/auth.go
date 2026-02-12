@@ -7,22 +7,31 @@ import (
 	"errors"
 	"time"
 
-	"github.com/google/uuid"
 	"auth-service/internal/entity"
+	"auth-service/internal/entity/dto"
 	"auth-service/internal/repository"
+
+	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 )
 
+type AuthUseCaseInterface interface {
+	Login(ctx context.Context, req dto.LoginRequest) (*dto.LoginResponse, error)
+	RefreshToken(ctx context.Context, req dto.RefreshTokenRequest) (*dto.LoginResponse, error)
+	CreateTenant(ctx context.Context, req dto.CreateTenantRequest) (*entity.Tenant, error)
+	CreateUser(ctx context.Context, req dto.CreateUserRequest) (*entity.User, error)
+}
+
 // AuthUseCase handles authentication logic
-type AuthUseCase struct {
-	userRepo              repository.UserRepository
-	tenantRepo            repository.TenantRepository
-	roleRepo              repository.RoleRepository
-	userRoleRepo          repository.UserRoleRepository
-	refreshTokenRepo      repository.RefreshTokenRepository
-	auditLogRepo          repository.AuditLogRepository
-	jwtService            JWTService
-	refreshTokenExpiry    int
+type authUseCase struct {
+	userRepo           repository.UserRepository
+	tenantRepo         repository.TenantRepository
+	roleRepo           repository.RoleRepository
+	userRoleRepo       repository.UserRoleRepository
+	refreshTokenRepo   repository.RefreshTokenRepository
+	auditLogRepo       repository.AuditLogRepository
+	jwtService         JWTService
+	refreshTokenExpiry int
 }
 
 // JWTService interface for JWT operations
@@ -41,8 +50,8 @@ func NewAuthUseCase(
 	auditLogRepo repository.AuditLogRepository,
 	jwtService JWTService,
 	refreshTokenExpiry int,
-) *AuthUseCase {
-	return &AuthUseCase{
+) AuthUseCaseInterface {
+	return &authUseCase{
 		userRepo:           userRepo,
 		tenantRepo:         tenantRepo,
 		roleRepo:           roleRepo,
@@ -54,22 +63,8 @@ func NewAuthUseCase(
 	}
 }
 
-// LoginRequest represents login input
-type LoginRequest struct {
-	Email    string
-	Password string
-	TenantID string
-}
-
-// LoginResponse represents login output
-type LoginResponse struct {
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
-	ExpiresIn    int    `json:"expires_in"`
-}
-
 // Login handles user login
-func (u *AuthUseCase) Login(ctx context.Context, req LoginRequest) (*LoginResponse, error) {
+func (u *authUseCase) Login(ctx context.Context, req dto.LoginRequest) (*dto.LoginResponse, error) {
 	// Get user by email and tenant
 	user, err := u.userRepo.GetUserByEmail(ctx, req.Email, req.TenantID)
 	if err != nil {
@@ -137,20 +132,15 @@ func (u *AuthUseCase) Login(ctx context.Context, req LoginRequest) (*LoginRespon
 		CreatedAt: time.Now(),
 	})
 
-	return &LoginResponse{
+	return &dto.LoginResponse{
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
 		ExpiresIn:    1800, // 30 minutes
 	}, nil
 }
 
-// RefreshTokenRequest represents refresh token input
-type RefreshTokenRequest struct {
-	RefreshToken string
-}
-
 // RefreshToken refreshes access token
-func (u *AuthUseCase) RefreshToken(ctx context.Context, req RefreshTokenRequest) (*LoginResponse, error) {
+func (u *authUseCase) RefreshToken(ctx context.Context, req dto.RefreshTokenRequest) (*dto.LoginResponse, error) {
 	// Get refresh token
 	rt, err := u.refreshTokenRepo.GetRefreshToken(ctx, req.RefreshToken)
 	if err != nil {
@@ -214,20 +204,15 @@ func (u *AuthUseCase) RefreshToken(ctx context.Context, req RefreshTokenRequest)
 		return nil, err
 	}
 
-	return &LoginResponse{
+	return &dto.LoginResponse{
 		AccessToken:  accessToken,
 		RefreshToken: newRefreshToken,
 		ExpiresIn:    1800,
 	}, nil
 }
 
-// CreateTenantRequest represents create tenant input
-type CreateTenantRequest struct {
-	Name string
-}
-
 // CreateTenant creates a new tenant
-func (u *AuthUseCase) CreateTenant(ctx context.Context, req CreateTenantRequest) (*entity.Tenant, error) {
+func (u *authUseCase) CreateTenant(ctx context.Context, req dto.CreateTenantRequest) (*entity.Tenant, error) {
 	tenant := &entity.Tenant{
 		ID:        uuid.New().String(),
 		Name:      req.Name,
@@ -257,16 +242,8 @@ func (u *AuthUseCase) CreateTenant(ctx context.Context, req CreateTenantRequest)
 	return createdTenant, nil
 }
 
-// CreateUserRequest represents create user input
-type CreateUserRequest struct {
-	Email    string
-	Password string
-	TenantID string
-	RoleIDs  []string
-}
-
 // CreateUser creates a new user
-func (u *AuthUseCase) CreateUser(ctx context.Context, req CreateUserRequest) (*entity.User, error) {
+func (u *authUseCase) CreateUser(ctx context.Context, req dto.CreateUserRequest) (*entity.User, error) {
 	// Hash password
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
@@ -303,7 +280,7 @@ func (u *AuthUseCase) CreateUser(ctx context.Context, req CreateUserRequest) (*e
 		Action:   "USER_CREATED",
 		Target:   createdUser.ID,
 		Metadata: map[string]interface{}{
-			"email":   createdUser.Email,
+			"email":    createdUser.Email,
 			"role_ids": req.RoleIDs,
 		},
 		CreatedAt: time.Now(),
@@ -313,7 +290,7 @@ func (u *AuthUseCase) CreateUser(ctx context.Context, req CreateUserRequest) (*e
 }
 
 // generateRefreshToken generates a random refresh token
-func (u *AuthUseCase) generateRefreshToken() (string, error) {
+func (u *authUseCase) generateRefreshToken() (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
 		return "", err

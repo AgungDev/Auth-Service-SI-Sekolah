@@ -1,26 +1,45 @@
 package handler
 
 import (
-	"encoding/json"
 	"net/http"
 	"strings"
 
+	"auth-service/internal/entity/dto"
 	"auth-service/internal/usecase"
+
+	"github.com/gin-gonic/gin"
 )
 
 // AuthHandler handles authentication requests
 type AuthHandler struct {
-	authUseCase *usecase.AuthUseCase
+	authUseCase usecase.AuthUseCaseInterface
+	rg          *gin.RouterGroup
 	jwtService  usecase.JWTService
 }
 
+func (h *AuthHandler) Routes() {
+	h.rg.POST("/login", h.Login)
+	h.rg.POST("/refresh", h.RefreshToken)
+	h.rg.POST("/tenants", h.CreateTenant)
+	h.rg.POST("/users", h.CreateUser)
+	h.rg.GET("/health", h.Health)
+}
+
 // NewAuthHandler creates a new auth handler
-func NewAuthHandler(authUseCase *usecase.AuthUseCase, jwtService usecase.JWTService) *AuthHandler {
+func NewAuthHandler(authUseCase usecase.AuthUseCaseInterface, jwtService usecase.JWTService, rg *gin.RouterGroup) *AuthHandler {
 	return &AuthHandler{
 		authUseCase: authUseCase,
 		jwtService:  jwtService,
+		rg:          rg,
 	}
 }
+
+// func NewAuthHandler(authUseCase *usecase.AuthUseCase, jwtService usecase.JWTService) *AuthHandler {
+// 	return &AuthHandler{
+// 		authUseCase: authUseCase,
+// 		jwtService:  jwtService,
+// 	}
+// }
 
 // ErrorResponse represents an error response
 type ErrorResponse struct {
@@ -41,37 +60,31 @@ type LoginRequestBody struct {
 }
 
 // Login handles POST /login
-func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		json.NewEncoder(w).Encode(ErrorResponse{Error: "Method not allowed"})
+func (h *AuthHandler) Login(ctx *gin.Context) {
+	if ctx.Request.Method != http.MethodPost {
+		ctx.JSON(http.StatusMethodNotAllowed, ErrorResponse{Error: "Method not allowed"})
 		return
 	}
 
 	var req LoginRequestBody
-	err := json.NewDecoder(r.Body).Decode(&req)
+	err := ctx.ShouldBind(&req)
 	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(ErrorResponse{Error: "Invalid request body"})
+		ctx.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid request body"})
 		return
 	}
 
-	ctx := r.Context()
-	resp, err := h.authUseCase.Login(ctx, usecase.LoginRequest{
+	resp, err := h.authUseCase.Login(ctx, dto.LoginRequest{
 		Email:    req.Email,
 		Password: req.Password,
 		TenantID: req.TenantID,
 	})
 
 	if err != nil {
-		w.WriteHeader(http.StatusUnauthorized)
-		json.NewEncoder(w).Encode(ErrorResponse{Error: err.Error()})
+		ctx.JSON(http.StatusUnauthorized, ErrorResponse{Error: err.Error()})
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(resp)
+	ctx.JSON(http.StatusOK, resp)
 }
 
 // RefreshTokenRequestBody represents the refresh token request body
@@ -80,35 +93,29 @@ type RefreshTokenRequestBody struct {
 }
 
 // RefreshToken handles POST /refresh
-func (h *AuthHandler) RefreshToken(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		json.NewEncoder(w).Encode(ErrorResponse{Error: "Method not allowed"})
+func (h *AuthHandler) RefreshToken(ctx *gin.Context) {
+	if ctx.Request.Method != http.MethodPost {
+		ctx.JSON(http.StatusMethodNotAllowed, ErrorResponse{Error: "Method not allowed"})
 		return
 	}
 
 	var req RefreshTokenRequestBody
-	err := json.NewDecoder(r.Body).Decode(&req)
+	err := ctx.ShouldBind(&req)
 	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(ErrorResponse{Error: "Invalid request body"})
+		ctx.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid request body"})
 		return
 	}
 
-	ctx := r.Context()
-	resp, err := h.authUseCase.RefreshToken(ctx, usecase.RefreshTokenRequest{
+	resp, err := h.authUseCase.RefreshToken(ctx, dto.RefreshTokenRequest{
 		RefreshToken: req.RefreshToken,
 	})
 
 	if err != nil {
-		w.WriteHeader(http.StatusUnauthorized)
-		json.NewEncoder(w).Encode(ErrorResponse{Error: err.Error()})
+		ctx.JSON(http.StatusUnauthorized, ErrorResponse{Error: err.Error()})
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(resp)
+	ctx.JSON(http.StatusOK, resp)
 }
 
 // CreateTenantRequestBody represents the create tenant request body
@@ -117,25 +124,22 @@ type CreateTenantRequestBody struct {
 }
 
 // CreateTenant handles POST /tenants
-func (h *AuthHandler) CreateTenant(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		json.NewEncoder(w).Encode(ErrorResponse{Error: "Method not allowed"})
+func (h *AuthHandler) CreateTenant(ctx *gin.Context) {
+	if ctx.Request.Method != http.MethodPost {
+		ctx.JSON(http.StatusMethodNotAllowed, ErrorResponse{Error: "Method not allowed"})
 		return
 	}
 
 	// Check authorization - SUPER_ADMIN only
-	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	token := strings.TrimPrefix(ctx.Request.Header.Get("Authorization"), "Bearer ")
 	if token == "" {
-		w.WriteHeader(http.StatusUnauthorized)
-		json.NewEncoder(w).Encode(ErrorResponse{Error: "Missing authorization token"})
+		ctx.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Missing authorization token"})
 		return
 	}
 
 	claims, err := h.jwtService.VerifyAccessToken(token)
 	if err != nil {
-		w.WriteHeader(http.StatusUnauthorized)
-		json.NewEncoder(w).Encode(ErrorResponse{Error: "Invalid token"})
+		ctx.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Invalid token"})
 		return
 	}
 
@@ -149,33 +153,27 @@ func (h *AuthHandler) CreateTenant(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !isAdmin {
-		w.WriteHeader(http.StatusForbidden)
-		json.NewEncoder(w).Encode(ErrorResponse{Error: "Insufficient permissions"})
+		ctx.JSON(http.StatusForbidden, ErrorResponse{Error: "Insufficient permissions"})
 		return
 	}
 
 	var req CreateTenantRequestBody
-	err = json.NewDecoder(r.Body).Decode(&req)
+	err = ctx.ShouldBind(&req)
 	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(ErrorResponse{Error: "Invalid request body"})
+		ctx.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid request body"})
 		return
 	}
 
-	ctx := r.Context()
-	tenant, err := h.authUseCase.CreateTenant(ctx, usecase.CreateTenantRequest{
+	tenant, err := h.authUseCase.CreateTenant(ctx, dto.CreateTenantRequest{
 		Name: req.Name,
 	})
 
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(ErrorResponse{Error: err.Error()})
+		ctx.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(SuccessResponse{
+	ctx.JSON(http.StatusCreated, SuccessResponse{
 		Message: "Tenant created successfully",
 		Data:    tenant,
 	})
@@ -190,45 +188,39 @@ type CreateUserRequestBody struct {
 }
 
 // CreateUser handles POST /users
-func (h *AuthHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		json.NewEncoder(w).Encode(ErrorResponse{Error: "Method not allowed"})
+func (h *AuthHandler) CreateUser(ctx *gin.Context) {
+	if ctx.Request.Method != http.MethodPost {
+		ctx.JSON(http.StatusMethodNotAllowed, ErrorResponse{Error: "Method not allowed"})
 		return
 	}
 
 	// Check authorization
-	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	token := strings.TrimPrefix(ctx.Request.Header.Get("Authorization"), "Bearer ")
 	if token == "" {
-		w.WriteHeader(http.StatusUnauthorized)
-		json.NewEncoder(w).Encode(ErrorResponse{Error: "Missing authorization token"})
+		ctx.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Missing authorization token"})
 		return
 	}
 
 	claims, err := h.jwtService.VerifyAccessToken(token)
 	if err != nil {
-		w.WriteHeader(http.StatusUnauthorized)
-		json.NewEncoder(w).Encode(ErrorResponse{Error: "Invalid token"})
+		ctx.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Invalid token"})
 		return
 	}
 
 	var req CreateUserRequestBody
-	err = json.NewDecoder(r.Body).Decode(&req)
+	err = ctx.ShouldBind(&req)
 	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(ErrorResponse{Error: "Invalid request body"})
+		ctx.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid request body"})
 		return
 	}
 
 	// Check if user has permission to create users in this tenant
 	if claims.TenantID != req.TenantID {
-		w.WriteHeader(http.StatusForbidden)
-		json.NewEncoder(w).Encode(ErrorResponse{Error: "Cannot create users in other tenants"})
+		ctx.JSON(http.StatusForbidden, ErrorResponse{Error: "Cannot create users in other tenants"})
 		return
 	}
 
-	ctx := r.Context()
-	user, err := h.authUseCase.CreateUser(ctx, usecase.CreateUserRequest{
+	user, err := h.authUseCase.CreateUser(ctx, dto.CreateUserRequest{
 		Email:    req.Email,
 		Password: req.Password,
 		TenantID: req.TenantID,
@@ -236,30 +228,24 @@ func (h *AuthHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(ErrorResponse{Error: err.Error()})
+		ctx.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(SuccessResponse{
+	ctx.JSON(http.StatusCreated, SuccessResponse{
 		Message: "User created successfully",
 		Data:    user,
 	})
 }
 
 // Health handles GET /health
-func (h *AuthHandler) Health(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		json.NewEncoder(w).Encode(ErrorResponse{Error: "Method not allowed"})
+func (h *AuthHandler) Health(ctx *gin.Context) {
+	if ctx.Request.Method != http.MethodGet {
+		ctx.JSON(http.StatusMethodNotAllowed, ErrorResponse{Error: "Method not allowed"})
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(SuccessResponse{
+	ctx.JSON(http.StatusOK, SuccessResponse{
 		Message: "Auth Service is running",
 		Data:    nil,
 	})

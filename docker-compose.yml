@@ -4,7 +4,7 @@ services:
   auth-service:
     build: .
     ports:
-      - "8001:8000"
+      - "8082:8000"
     environment:
       - DB_HOST=auth-db
       - DB_PORT=5432

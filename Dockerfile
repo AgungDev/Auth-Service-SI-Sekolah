@@ -1,5 +1,5 @@
 # Build stage
-FROM golang:1.21-alpine AS builder
+FROM golang:1.23-alpine AS builder
 
 WORKDIR /app
 
@@ -34,7 +34,7 @@ COPY --from=builder /app/auth-service .
 COPY --from=builder /app/database/migrations ./database/migrations
 
 # Copy .env if it exists (optional in docker)
-# COPY --from=builder /app/.env .
+COPY --from=builder /app/.env .
 
 EXPOSE 8000
 
