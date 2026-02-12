@@ -7,13 +7,14 @@ import (
 	"os"
 	"time"
 
-	_ "github.com/lib/pq"
 	"auth-service/internal/handler"
 	"auth-service/internal/middleware"
 	"auth-service/internal/repository"
 	"auth-service/internal/usecase"
 	"auth-service/pkg/config"
 	"auth-service/pkg/logger"
+
+	_ "github.com/lib/pq"
 )
 
 func main() {
@@ -37,14 +38,13 @@ func main() {
 	log.Info("Connected to database")
 
 	// Initialize repositories
-	postgresDB := repository.NewPostgresDB(db)
-	tenantRepo := repository.NewTenantRepository(postgresDB)
-	userRepo := repository.NewUserRepository(postgresDB)
-	roleRepo := repository.NewRoleRepository(postgresDB)
+	tenantRepo := repository.NewTenantRepository(db)
+	userRepo := repository.NewUserRepository(db)
+	roleRepo := repository.NewRoleRepository(db)
 	// permissionRepo := repository.NewPermissionRepository(postgresDB)
-	userRoleRepo := repository.NewUserRoleRepository(postgresDB)
-	refreshTokenRepo := repository.NewRefreshTokenRepository(postgresDB)
-	auditLogRepo := repository.NewAuditLogRepository(postgresDB)
+	userRoleRepo := repository.NewUserRoleRepository(db)
+	refreshTokenRepo := repository.NewRefreshTokenRepository(db)
+	auditLogRepo := repository.NewAuditLogRepository(db)
 
 	// Initialize JWT service
 	jwtService := usecase.NewJWTService(cfg.JWTSecret, cfg.JWTExpiry)
