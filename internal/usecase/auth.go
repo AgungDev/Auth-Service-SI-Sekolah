@@ -10,16 +10,17 @@ import (
 	"auth-service/internal/entity"
 	"auth-service/internal/entity/dto"
 	"auth-service/internal/repository"
+	"auth-service/pkg/service"
 
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 )
 
 type AuthUseCaseInterface interface {
-	Login(ctx context.Context, req dto.LoginRequest) (*dto.LoginResponse, error)
-	RefreshToken(ctx context.Context, req dto.RefreshTokenRequest) (*dto.LoginResponse, error)
-	CreateTenant(ctx context.Context, req dto.CreateTenantRequest) (*entity.Tenant, error)
-	CreateUser(ctx context.Context, req dto.CreateUserRequest) (*entity.User, error)
+	Login(ctx context.Context, req dto.LoginRequestBody) (*dto.LoginResponse, error)
+	RefreshToken(ctx context.Context, req dto.RefreshTokenRequestBody) (*dto.LoginResponse, error)
+	CreateTenant(ctx context.Context, req dto.CreateTenantRequestBody) (*entity.Tenant, error)
+	CreateUser(ctx context.Context, req dto.CreateUserRequestBody) (*entity.User, error)
 }
 
 // AuthUseCase handles authentication logic
@@ -30,14 +31,8 @@ type authUseCase struct {
 	userRoleRepo       repository.UserRoleRepository
 	refreshTokenRepo   repository.RefreshTokenRepository
 	auditLogRepo       repository.AuditLogRepository
-	jwtService         JWTService
+	jwtService         service.JwtServiceImpl
 	refreshTokenExpiry int
-}
-
-// JWTService interface for JWT operations
-type JWTService interface {
-	GenerateAccessToken(user *entity.User, roles []*entity.Role, tenant *entity.Tenant) (string, error)
-	VerifyAccessToken(token string) (*entity.AccessTokenClaims, error)
 }
 
 // NewAuthUseCase creates a new auth usecase
@@ -48,7 +43,7 @@ func NewAuthUseCase(
 	userRoleRepo repository.UserRoleRepository,
 	refreshTokenRepo repository.RefreshTokenRepository,
 	auditLogRepo repository.AuditLogRepository,
-	jwtService JWTService,
+	jwtService service.JwtServiceImpl,
 	refreshTokenExpiry int,
 ) AuthUseCaseInterface {
 	return &authUseCase{
@@ -64,7 +59,7 @@ func NewAuthUseCase(
 }
 
 // Login handles user login
-func (u *authUseCase) Login(ctx context.Context, req dto.LoginRequest) (*dto.LoginResponse, error) {
+func (u *authUseCase) Login(ctx context.Context, req dto.LoginRequestBody) (*dto.LoginResponse, error) {
 	// Get user by email and tenant
 	user, err := u.userRepo.GetUserByEmail(ctx, req.Email, req.TenantID)
 	if err != nil {
@@ -140,7 +135,7 @@ func (u *authUseCase) Login(ctx context.Context, req dto.LoginRequest) (*dto.Log
 }
 
 // RefreshToken refreshes access token
-func (u *authUseCase) RefreshToken(ctx context.Context, req dto.RefreshTokenRequest) (*dto.LoginResponse, error) {
+func (u *authUseCase) RefreshToken(ctx context.Context, req dto.RefreshTokenRequestBody) (*dto.LoginResponse, error) {
 	// Get refresh token
 	rt, err := u.refreshTokenRepo.GetRefreshToken(ctx, req.RefreshToken)
 	if err != nil {
@@ -212,7 +207,7 @@ func (u *authUseCase) RefreshToken(ctx context.Context, req dto.RefreshTokenRequ
 }
 
 // CreateTenant creates a new tenant
-func (u *authUseCase) CreateTenant(ctx context.Context, req dto.CreateTenantRequest) (*entity.Tenant, error) {
+func (u *authUseCase) CreateTenant(ctx context.Context, req dto.CreateTenantRequestBody) (*entity.Tenant, error) {
 	tenant := &entity.Tenant{
 		ID:        uuid.New().String(),
 		Name:      req.Name,
@@ -243,7 +238,7 @@ func (u *authUseCase) CreateTenant(ctx context.Context, req dto.CreateTenantRequ
 }
 
 // CreateUser creates a new user
-func (u *authUseCase) CreateUser(ctx context.Context, req dto.CreateUserRequest) (*entity.User, error) {
+func (u *authUseCase) CreateUser(ctx context.Context, req dto.CreateUserRequestBody) (*entity.User, error) {
 	// Hash password
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {

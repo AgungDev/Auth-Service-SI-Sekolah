@@ -1,6 +1,6 @@
 package dto
 
 // RefreshTokenRequest represents refresh token input
-type RefreshTokenRequest struct {
-	RefreshToken string
+type RefreshTokenRequestBody struct {
+	RefreshToken string `json:"refresh_token"`
 }

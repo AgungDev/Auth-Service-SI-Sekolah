@@ -6,6 +6,7 @@ import (
 
 	"auth-service/internal/entity/dto"
 	"auth-service/internal/usecase"
+	"auth-service/pkg/service"
 
 	"github.com/gin-gonic/gin"
 )
@@ -14,7 +15,7 @@ import (
 type AuthHandler struct {
 	authUseCase usecase.AuthUseCaseInterface
 	rg          *gin.RouterGroup
-	jwtService  usecase.JWTService
+	jwtService  service.JwtServiceImpl
 }
 
 func (h *AuthHandler) Routes() {
@@ -26,7 +27,7 @@ func (h *AuthHandler) Routes() {
 }
 
 // NewAuthHandler creates a new auth handler
-func NewAuthHandler(authUseCase usecase.AuthUseCaseInterface, jwtService usecase.JWTService, rg *gin.RouterGroup) *AuthHandler {
+func NewAuthHandler(authUseCase usecase.AuthUseCaseInterface, jwtService service.JwtServiceImpl, rg *gin.RouterGroup) *AuthHandler {
 	return &AuthHandler{
 		authUseCase: authUseCase,
 		jwtService:  jwtService,
@@ -34,112 +35,71 @@ func NewAuthHandler(authUseCase usecase.AuthUseCaseInterface, jwtService usecase
 	}
 }
 
-// func NewAuthHandler(authUseCase *usecase.AuthUseCase, jwtService usecase.JWTService) *AuthHandler {
-// 	return &AuthHandler{
-// 		authUseCase: authUseCase,
-// 		jwtService:  jwtService,
-// 	}
-// }
-
-// ErrorResponse represents an error response
-type ErrorResponse struct {
-	Error string `json:"error"`
-}
-
-// SuccessResponse represents a generic success response
-type SuccessResponse struct {
-	Message string      `json:"message"`
-	Data    interface{} `json:"data"`
-}
-
-// LoginRequest represents the login request body
-type LoginRequestBody struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
-	TenantID string `json:"tenant_id"`
-}
-
 // Login handles POST /login
 func (h *AuthHandler) Login(ctx *gin.Context) {
 	if ctx.Request.Method != http.MethodPost {
-		ctx.JSON(http.StatusMethodNotAllowed, ErrorResponse{Error: "Method not allowed"})
+		ctx.JSON(http.StatusMethodNotAllowed, dto.ErrorResponse{Error: "Method not allowed"})
 		return
 	}
 
-	var req LoginRequestBody
+	var req dto.LoginRequestBody
 	err := ctx.ShouldBind(&req)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid request body"})
+		ctx.JSON(http.StatusBadRequest, dto.ErrorResponse{Error: "Invalid request body"})
 		return
 	}
 
-	resp, err := h.authUseCase.Login(ctx, dto.LoginRequest{
-		Email:    req.Email,
-		Password: req.Password,
-		TenantID: req.TenantID,
-	})
+	resp, err := h.authUseCase.Login(ctx, req)
 
 	if err != nil {
-		ctx.JSON(http.StatusUnauthorized, ErrorResponse{Error: err.Error()})
+		ctx.JSON(http.StatusUnauthorized, dto.ErrorResponse{Error: err.Error()})
 		return
 	}
 
 	ctx.JSON(http.StatusOK, resp)
-}
-
-// RefreshTokenRequestBody represents the refresh token request body
-type RefreshTokenRequestBody struct {
-	RefreshToken string `json:"refresh_token"`
 }
 
 // RefreshToken handles POST /refresh
 func (h *AuthHandler) RefreshToken(ctx *gin.Context) {
 	if ctx.Request.Method != http.MethodPost {
-		ctx.JSON(http.StatusMethodNotAllowed, ErrorResponse{Error: "Method not allowed"})
+		ctx.JSON(http.StatusMethodNotAllowed, dto.ErrorResponse{Error: "Method not allowed"})
 		return
 	}
 
-	var req RefreshTokenRequestBody
+	var req dto.RefreshTokenRequestBody
 	err := ctx.ShouldBind(&req)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid request body"})
+		ctx.JSON(http.StatusBadRequest, dto.ErrorResponse{Error: "Invalid request body"})
 		return
 	}
 
-	resp, err := h.authUseCase.RefreshToken(ctx, dto.RefreshTokenRequest{
-		RefreshToken: req.RefreshToken,
-	})
+	resp, err := h.authUseCase.RefreshToken(ctx, req)
 
 	if err != nil {
-		ctx.JSON(http.StatusUnauthorized, ErrorResponse{Error: err.Error()})
+		ctx.JSON(http.StatusUnauthorized, dto.ErrorResponse{Error: err.Error()})
 		return
 	}
 
 	ctx.JSON(http.StatusOK, resp)
 }
 
-// CreateTenantRequestBody represents the create tenant request body
-type CreateTenantRequestBody struct {
-	Name string `json:"name"`
-}
-
 // CreateTenant handles POST /tenants
 func (h *AuthHandler) CreateTenant(ctx *gin.Context) {
 	if ctx.Request.Method != http.MethodPost {
-		ctx.JSON(http.StatusMethodNotAllowed, ErrorResponse{Error: "Method not allowed"})
+		ctx.JSON(http.StatusMethodNotAllowed, dto.ErrorResponse{Error: "Method not allowed"})
 		return
 	}
 
 	// Check authorization - SUPER_ADMIN only
 	token := strings.TrimPrefix(ctx.Request.Header.Get("Authorization"), "Bearer ")
 	if token == "" {
-		ctx.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Missing authorization token"})
+		ctx.JSON(http.StatusUnauthorized, dto.ErrorResponse{Error: "Missing authorization token"})
 		return
 	}
 
 	claims, err := h.jwtService.VerifyAccessToken(token)
 	if err != nil {
-		ctx.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Invalid token"})
+		ctx.JSON(http.StatusUnauthorized, dto.ErrorResponse{Error: "Invalid token"})
 		return
 	}
 
@@ -153,86 +113,71 @@ func (h *AuthHandler) CreateTenant(ctx *gin.Context) {
 	}
 
 	if !isAdmin {
-		ctx.JSON(http.StatusForbidden, ErrorResponse{Error: "Insufficient permissions"})
+		ctx.JSON(http.StatusForbidden, dto.ErrorResponse{Error: "Insufficient permissions"})
 		return
 	}
 
-	var req CreateTenantRequestBody
+	var req dto.CreateTenantRequestBody
 	err = ctx.ShouldBind(&req)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid request body"})
+		ctx.JSON(http.StatusBadRequest, dto.ErrorResponse{Error: "Invalid request body"})
 		return
 	}
 
-	tenant, err := h.authUseCase.CreateTenant(ctx, dto.CreateTenantRequest{
-		Name: req.Name,
-	})
+	tenant, err := h.authUseCase.CreateTenant(ctx, req)
 
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+		ctx.JSON(http.StatusInternalServerError, dto.ErrorResponse{Error: err.Error()})
 		return
 	}
 
-	ctx.JSON(http.StatusCreated, SuccessResponse{
+	ctx.JSON(http.StatusCreated, dto.SuccessResponse{
 		Message: "Tenant created successfully",
 		Data:    tenant,
 	})
 }
 
-// CreateUserRequestBody represents the create user request body
-type CreateUserRequestBody struct {
-	Email    string   `json:"email"`
-	Password string   `json:"password"`
-	TenantID string   `json:"tenant_id"`
-	RoleIDs  []string `json:"role_ids"`
-}
-
 // CreateUser handles POST /users
 func (h *AuthHandler) CreateUser(ctx *gin.Context) {
 	if ctx.Request.Method != http.MethodPost {
-		ctx.JSON(http.StatusMethodNotAllowed, ErrorResponse{Error: "Method not allowed"})
+		ctx.JSON(http.StatusMethodNotAllowed, dto.ErrorResponse{Error: "Method not allowed"})
 		return
 	}
 
 	// Check authorization
 	token := strings.TrimPrefix(ctx.Request.Header.Get("Authorization"), "Bearer ")
 	if token == "" {
-		ctx.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Missing authorization token"})
+		ctx.JSON(http.StatusUnauthorized, dto.ErrorResponse{Error: "Missing authorization token"})
 		return
 	}
 
 	claims, err := h.jwtService.VerifyAccessToken(token)
 	if err != nil {
-		ctx.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Invalid token"})
+		ctx.JSON(http.StatusUnauthorized, dto.ErrorResponse{Error: "Invalid token"})
 		return
 	}
 
-	var req CreateUserRequestBody
+	var req dto.CreateUserRequestBody
 	err = ctx.ShouldBind(&req)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid request body"})
+		ctx.JSON(http.StatusBadRequest, dto.ErrorResponse{Error: "Invalid request body"})
 		return
 	}
 
 	// Check if user has permission to create users in this tenant
 	if claims.TenantID != req.TenantID {
-		ctx.JSON(http.StatusForbidden, ErrorResponse{Error: "Cannot create users in other tenants"})
+		ctx.JSON(http.StatusForbidden, dto.ErrorResponse{Error: "Cannot create users in other tenants"})
 		return
 	}
 
-	user, err := h.authUseCase.CreateUser(ctx, dto.CreateUserRequest{
-		Email:    req.Email,
-		Password: req.Password,
-		TenantID: req.TenantID,
-		RoleIDs:  req.RoleIDs,
-	})
+	user, err := h.authUseCase.CreateUser(ctx, req)
 
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+		ctx.JSON(http.StatusInternalServerError, dto.ErrorResponse{Error: err.Error()})
 		return
 	}
 
-	ctx.JSON(http.StatusCreated, SuccessResponse{
+	ctx.JSON(http.StatusCreated, dto.SuccessResponse{
 		Message: "User created successfully",
 		Data:    user,
 	})
@@ -241,11 +186,11 @@ func (h *AuthHandler) CreateUser(ctx *gin.Context) {
 // Health handles GET /health
 func (h *AuthHandler) Health(ctx *gin.Context) {
 	if ctx.Request.Method != http.MethodGet {
-		ctx.JSON(http.StatusMethodNotAllowed, ErrorResponse{Error: "Method not allowed"})
+		ctx.JSON(http.StatusMethodNotAllowed, dto.ErrorResponse{Error: "Method not allowed"})
 		return
 	}
 
-	ctx.JSON(http.StatusOK, SuccessResponse{
+	ctx.JSON(http.StatusOK, dto.SuccessResponse{
 		Message: "Auth Service is running",
 		Data:    nil,
 	})
