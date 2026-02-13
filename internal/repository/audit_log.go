@@ -30,13 +30,12 @@ func (r *AuditLogRepositoryImpl) CreateAuditLog(ctx context.Context, log *entity
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
 	`
 
-	var metadata []byte
+	var metadata interface{}
 	if log.Metadata != nil {
-		var err error
-		metadata, err = json.Marshal(log.Metadata)
-		if err != nil {
-			return err
-		}
+		metadata = log.Metadata
+	} else {
+		// Use empty JSON object for null metadata
+		metadata = json.RawMessage(`{}`)
 	}
 
 	_, err := r.db.ExecContext(ctx, query,

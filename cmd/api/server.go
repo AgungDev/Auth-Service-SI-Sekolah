@@ -2,6 +2,7 @@ package main
 
 import (
 	"auth-service/internal/handler"
+	"auth-service/internal/middleware"
 	"auth-service/internal/repository"
 	"auth-service/internal/usecase"
 	"auth-service/pkg/config"
@@ -25,7 +26,8 @@ type Server struct {
 func (s *Server) initRoute() {
 	// api group
 	apiGroup := s.engine.Group("")
-	handler.NewAuthHandler(s.authUseCase, s.jwtService, apiGroup).Routes()
+	midware := middleware.NewAuthMiddleware(s.jwtService)
+	handler.NewAuthHandler(s.authUseCase, s.jwtService, apiGroup, midware).Routes()
 
 }
 

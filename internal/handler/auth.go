@@ -2,9 +2,10 @@ package handler
 
 import (
 	"net/http"
-	"strings"
 
+	"auth-service/internal/entity"
 	"auth-service/internal/entity/dto"
+	"auth-service/internal/middleware"
 	"auth-service/internal/usecase"
 	"auth-service/pkg/service"
 
@@ -16,22 +17,37 @@ type AuthHandler struct {
 	authUseCase usecase.AuthUseCaseInterface
 	rg          *gin.RouterGroup
 	jwtService  service.JwtServiceImpl
+	mid middleware.AuthMiddleware
 }
 
 func (h *AuthHandler) Routes() {
-	h.rg.POST("/login", h.Login)
-	h.rg.POST("/refresh", h.RefreshToken)
-	h.rg.POST("/tenants", h.CreateTenant)
-	h.rg.POST("/users", h.CreateUser)
-	h.rg.GET("/health", h.Health)
+    // Grup publik tanpa middleware
+    h.rg.POST("/login", h.Login)
+    h.rg.POST("/refresh", h.RefreshToken)
+    h.rg.GET("/health", h.Health)
+
+    // Grup untuk route yang membutuhkan middleware token SUPER_ADMIN
+    superAdminGroup := h.rg.Group("/")
+    superAdminGroup.Use(h.mid.RequiredToken("SUPER_ADMIN"))
+    {
+        superAdminGroup.POST("/tenants", h.CreateTenant)
+    }
+
+    // Grup untuk route yang membutuhkan token TENANT_ADMIN atau SUPER_ADMIN
+    tenantAdminGroup := h.rg.Group("/")
+    tenantAdminGroup.Use(h.mid.RequiredToken("TENANT_ADMIN", "SUPER_ADMIN"))
+    {
+        tenantAdminGroup.POST("/users", h.CreateUser)
+    }
 }
 
 // NewAuthHandler creates a new auth handler
-func NewAuthHandler(authUseCase usecase.AuthUseCaseInterface, jwtService service.JwtServiceImpl, rg *gin.RouterGroup) *AuthHandler {
+func NewAuthHandler(authUseCase usecase.AuthUseCaseInterface, jwtService service.JwtServiceImpl, rg *gin.RouterGroup, am middleware.AuthMiddleware) *AuthHandler {
 	return &AuthHandler{
 		authUseCase: authUseCase,
 		jwtService:  jwtService,
 		rg:          rg,
+		mid:         am,
 	}
 }
 
@@ -84,41 +100,24 @@ func (h *AuthHandler) RefreshToken(ctx *gin.Context) {
 }
 
 // CreateTenant handles POST /tenants
+// Note: Middleware already validates SUPER_ADMIN role
 func (h *AuthHandler) CreateTenant(ctx *gin.Context) {
 	if ctx.Request.Method != http.MethodPost {
 		ctx.JSON(http.StatusMethodNotAllowed, dto.ErrorResponse{Error: "Method not allowed"})
 		return
 	}
 
-	// Check authorization - SUPER_ADMIN only
-	token := strings.TrimPrefix(ctx.Request.Header.Get("Authorization"), "Bearer ")
-	if token == "" {
-		ctx.JSON(http.StatusUnauthorized, dto.ErrorResponse{Error: "Missing authorization token"})
+	// Get user info from context (injected by middleware)
+	userClaims, exists := ctx.Get("user")
+	if !exists {
+		ctx.JSON(http.StatusUnauthorized, dto.ErrorResponse{Error: "User not found in context"})
 		return
 	}
 
-	claims, err := h.jwtService.VerifyAccessToken(token)
-	if err != nil {
-		ctx.JSON(http.StatusUnauthorized, dto.ErrorResponse{Error: "Invalid token"})
-		return
-	}
-
-	// Check if user has SUPER_ADMIN role
-	isAdmin := false
-	for _, role := range claims.Roles {
-		if role == "SUPER_ADMIN" {
-			isAdmin = true
-			break
-		}
-	}
-
-	if !isAdmin {
-		ctx.JSON(http.StatusForbidden, dto.ErrorResponse{Error: "Insufficient permissions"})
-		return
-	}
+	_ = userClaims.(*entity.AccessTokenClaims)
 
 	var req dto.CreateTenantRequestBody
-	err = ctx.ShouldBind(&req)
+	err := ctx.ShouldBind(&req)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, dto.ErrorResponse{Error: "Invalid request body"})
 		return
@@ -138,27 +137,24 @@ func (h *AuthHandler) CreateTenant(ctx *gin.Context) {
 }
 
 // CreateUser handles POST /users
+// Note: Middleware already validates TENANT_ADMIN or SUPER_ADMIN role
 func (h *AuthHandler) CreateUser(ctx *gin.Context) {
 	if ctx.Request.Method != http.MethodPost {
 		ctx.JSON(http.StatusMethodNotAllowed, dto.ErrorResponse{Error: "Method not allowed"})
 		return
 	}
 
-	// Check authorization
-	token := strings.TrimPrefix(ctx.Request.Header.Get("Authorization"), "Bearer ")
-	if token == "" {
-		ctx.JSON(http.StatusUnauthorized, dto.ErrorResponse{Error: "Missing authorization token"})
+	// Get user info from context (injected by middleware)
+	userClaims, exists := ctx.Get("user")
+	if !exists {
+		ctx.JSON(http.StatusUnauthorized, dto.ErrorResponse{Error: "User not found in context"})
 		return
 	}
 
-	claims, err := h.jwtService.VerifyAccessToken(token)
-	if err != nil {
-		ctx.JSON(http.StatusUnauthorized, dto.ErrorResponse{Error: "Invalid token"})
-		return
-	}
+	claims := userClaims.(*entity.AccessTokenClaims)
 
 	var req dto.CreateUserRequestBody
-	err = ctx.ShouldBind(&req)
+	err := ctx.ShouldBind(&req)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, dto.ErrorResponse{Error: "Invalid request body"})
 		return
