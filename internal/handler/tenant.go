@@ -60,8 +60,32 @@ func (h *TenantHandler) CreateTenant(ctx *gin.Context) {
 	var req dto.CreateTenantRequestBody
 	err := ctx.ShouldBind(&req)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, dto.ErrorResponse{Error: "Invalid request body"})
+		ctx.JSON(http.StatusBadRequest, dto.ErrorResponse{Error: "invalid_request", Message: "Invalid request body"})
 		return
+	}
+
+	// Validate required fields
+	if req.Name == "" {
+		ctx.JSON(http.StatusBadRequest, dto.ErrorResponse{Error: "invalid_request", Message: "name is required"})
+		return
+	}
+	if req.Address == "" {
+		ctx.JSON(http.StatusBadRequest, dto.ErrorResponse{Error: "invalid_request", Message: "address is required"})
+		return
+	}
+	if len(req.Address) > 512 {
+		ctx.JSON(http.StatusBadRequest, dto.ErrorResponse{Error: "invalid_request", Message: "address is too long"})
+		return
+	}
+	// Validate status if provided
+	if req.Status != "" {
+		switch req.Status {
+		case "ACTIVE", "SUSPENDED", "ARCHIVED":
+			// ok
+		default:
+			ctx.JSON(http.StatusBadRequest, dto.ErrorResponse{Error: "invalid_request", Message: "invalid status"})
+			return
+		}
 	}
 
 	tenant, err := h.tenantUseCase.CreateTenant(ctx, req)

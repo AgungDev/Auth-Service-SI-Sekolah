@@ -25,16 +25,16 @@ func NewTenantRepository(db *sql.DB) TenantRepository {
 
 func (r *TenantRepositoryImpl) CreateTenant(ctx context.Context, tenant *entity.Tenant) (*entity.Tenant, error) {
 	query := `
-		INSERT INTO tenants (id, name, status, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5)
-		RETURNING id, name, status, created_at, updated_at
+		INSERT INTO tenants (id, name, address, status, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		RETURNING id, name, address, status, created_at, updated_at
 	`
 
 	row := r.db.QueryRowContext(ctx, query,
-		tenant.ID, tenant.Name, tenant.Status, tenant.CreatedAt, tenant.UpdatedAt)
+		tenant.ID, tenant.Name, tenant.Address, tenant.Status, tenant.CreatedAt, tenant.UpdatedAt)
 
 	var t entity.Tenant
-	err := row.Scan(&t.ID, &t.Name, &t.Status, &t.CreatedAt, &t.UpdatedAt)
+	err := row.Scan(&t.ID, &t.Name, &t.Address, &t.Status, &t.CreatedAt, &t.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -45,14 +45,14 @@ func (r *TenantRepositoryImpl) CreateTenant(ctx context.Context, tenant *entity.
 // GetTenantByID gets a tenant by ID
 func (r *TenantRepositoryImpl) GetTenantByID(ctx context.Context, id string) (*entity.Tenant, error) {
 	query := `
-		SELECT id, name, status, created_at, updated_at
+		SELECT id, name, address, status, created_at, updated_at
 		FROM tenants
 		WHERE id = $1
 	`
 
 	row := r.db.QueryRowContext(ctx, query, id)
 	var tenant entity.Tenant
-	err := row.Scan(&tenant.ID, &tenant.Name, &tenant.Status, &tenant.CreatedAt, &tenant.UpdatedAt)
+	err := row.Scan(&tenant.ID, &tenant.Name, &tenant.Address, &tenant.Status, &tenant.CreatedAt, &tenant.UpdatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, errors.New("tenant not found")
@@ -66,7 +66,7 @@ func (r *TenantRepositoryImpl) GetTenantByID(ctx context.Context, id string) (*e
 // GetAllTenants gets all tenants
 func (r *TenantRepositoryImpl) GetAllTenants(ctx context.Context) ([]*entity.Tenant, error) {
 	query := `
-		SELECT id, name, status, created_at, updated_at
+		SELECT id, name, address, status, created_at, updated_at
 		FROM tenants
 	`
 
@@ -79,7 +79,7 @@ func (r *TenantRepositoryImpl) GetAllTenants(ctx context.Context) ([]*entity.Ten
 	var tenants []*entity.Tenant
 	for rows.Next() {
 		var tenant entity.Tenant
-		err := rows.Scan(&tenant.ID, &tenant.Name, &tenant.Status, &tenant.CreatedAt, &tenant.UpdatedAt)
+		err := rows.Scan(&tenant.ID, &tenant.Name, &tenant.Address, &tenant.Status, &tenant.CreatedAt, &tenant.UpdatedAt)
 		if err != nil {
 			return nil, err
 		}

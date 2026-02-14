@@ -1,375 +1,430 @@
-# Auth Service – Multi-Tenant School System
+# 📘 Auth Service – API Contract
 
-Auth Service adalah **microservice autentikasi & otorisasi**  
-untuk Sistem Informasi Sekolah berbasis **multi-tenant (sekolah)**.
+## Multi-Tenant School System (ARKAS Scenario)
 
-Service ini bertanggung jawab penuh atas:
+Auth Service adalah Identity & Access Management (IAM) untuk sistem multi-tenant sekolah.
 
-- Tenant (sekolah)
+Service ini bertanggung jawab atas:
+
+- Tenant (Sekolah)
 - User
-- Role & Permission
-- Token (Access & Refresh)
-- Audit log aktivitas sensitif
-- Boundary otoritas sistem
+- Role
+- Permission
+- JWT Access & Refresh Token
+- Audit Log aktivitas sensitif
 
-⚠️ Repository ini **HANYA** berisi auth-service.  
-Tidak ada logic ARKAS atau service lain di sini.
-
----
-
-## 🎯 Tujuan Service
-
-- Menjadi **single source of truth** untuk identitas user
-- Menyediakan **kontrak JWT ringan** untuk service lain
-- Mendukung arsitektur microservice secara aman
-- Siap dipakai sebagai fondasi produk SaaS
+Auth Service **tidak mengandung logic ARKAS**.
 
 ---
 
-## 🧠 Konsep Inti
+# 🧱 Architectural Role
 
-### Tenant
+Auth berfungsi sebagai:
 
-- 1 tenant = 1 sekolah
-- Semua user **SELALU** terikat ke satu tenant
-- Tidak ada data sharing antar tenant
+- Identity Provider (IdP)
+- Token Issuer
+- Role & Permission Authority
+- Security Boundary Enforcement
 
-### Token Strategy
+Service lain (contoh: ARKAS) hanya:
 
-Auth Service menggunakan **2 jenis token**:
-
-- **Access Token** → pendek, dipakai antar service
-- **Refresh Token** → panjang, hanya ke auth-service
-
-Service lain **TIDAK PERNAH** menerima refresh token.
+- Memverifikasi JWT
+- Membaca claims
+- Mengecek permission
 
 ---
 
-## 🔐 Token Design
+# 🔐 Authentication Strategy
 
-### Access Token (JWT – Ringan)
+- JWT (RS256 recommended)
+- Access Token: short-lived (15 menit)
+- Refresh Token: long-lived (7 hari)
+- Stateless access validation
+- Refresh token disimpan di DB (rotating recommended)
 
-Digunakan oleh service lain (ARKAS, dll).
+---
+
+# 📦 Base URL
+
+```
+/api/v1
+```
+
+---
+
+# 🏫 Multi-Tenant Model
+
+Semua user terikat ke:
+
+```
+tenant_id
+```
+
+SUPER_ADMIN tidak terikat tenant.
+
+---
+
+# 📄 JWT Claims Structure
+
+Access Token payload:
 
 ```json
 {
-  "sub": "user-id",
-  "tenant_id": "school-id",
-  "roles": ["BENDAHARA"],
-  "tenant_status": "ACTIVE",
-  "exp": 1710000000
+  "sub": "user_uuid",
+  "tenant_id": "tenant_uuid",
+  "role": "BENDAHARA",
+  "permissions": ["budget:create", "realization:create", "report:view"],
+  "is_super_admin": false,
+  "exp": 1730000000,
+  "iat": 1729990000,
+  "iss": "auth-service"
 }
 ```
 
-Prinsip:
+ARKAS membaca:
 
-- **TIDAK menyimpan permission detail**
-- Role dipakai sebagai identifier
-- Permission dimapping di masing-masing service
-
-Tujuan:
-
-- JWT kecil
-- Performa stabil
-- Mudah di-cache
-
----
-
-### Refresh Token
-
-- Disimpan di database auth-service
-- Terkait dengan user & tenant
-- Bisa direvoke kapan saja
-
-Contoh atribut:
-
-- token
-- user_id
 - tenant_id
-- expires_at
-- revoked_at
+- permissions
+- role
+- is_super_admin
 
 ---
 
-## 🏗️ Arsitektur
+# 🟢 Public Endpoints
 
-Auth Service menggunakan **Clean Architecture**.
+## 1️⃣ Login
 
-```
-cmd/
-  api/
-internal/
-  entity/
-  usecase/
-  repository/
-  handler/
-  middleware/
-pkg/
-  config/
-  logger/
+### POST `/auth/login`
+
+Request:
+
+```json
+{
+  "email": "bendahara@sekolah.id",
+  "password": "password123"
+}
 ```
 
-### Aturan Boundary (WAJIB)
+Response 200:
 
-- `entity` → tidak tahu HTTP / DB
-- `usecase` → tidak tahu framework
-- `handler` → hanya adapter
-- Logic bisnis **tidak boleh** di handler
-
----
-
-## 👤 Role & Boundary Otoritas
-
-### System Level (NON-SEKOLAH)
-
-#### SYSTEM_OWNER
-
-- Akses internal
-- Tidak login via API publik
-- Mengelola sistem SaaS
-
-#### SUPER_ADMIN
-
-- Membuat tenant
-- Suspend / activate tenant
-- Reset admin sekolah
-
-⚠️ SUPER_ADMIN:
-
-- Tidak digunakan operasional harian
-- Tidak mengelola data sekolah
-
----
-
-### Tenant Level (Sekolah)
-
-| Role           | Deskripsi           |
-| -------------- | ------------------- |
-| ADMIN_SEKOLAH  | Admin utama sekolah |
-| BENDAHARA      | Pengelola keuangan  |
-| KEPALA_SEKOLAH | Approver & pengawas |
-| OPERATOR       | Input data          |
-
----
-
-## 🔑 Permission Strategy
-
-Auth Service:
-
-- Menyimpan **role & permission mapping**
-- Menghasilkan token berbasis **role**
-
-Service lain:
-
-- Memetakan `role → permission` secara lokal
-- Tidak memanggil auth-service
-
-Contoh permission format:
-
-```
-{resource}.{action}
+```json
+{
+  "access_token": "jwt_token",
+  "refresh_token": "refresh_token",
+  "expires_in": 900
+}
 ```
 
-Contoh:
+Error 401:
 
-- transaction.create
-- report.export
+```json
+{
+  "error": "invalid_credentials"
+}
+```
 
 ---
 
-## 📡 API Endpoint (Minimal)
+## 2️⃣ Refresh Token
 
-### POST /login
+### POST `/auth/refresh`
 
-- Validasi user
-- Menghasilkan access token & refresh token
+Request:
+
+```json
+{
+  "refresh_token": "refresh_token"
+}
+```
 
 Response:
 
 ```json
 {
-  "access_token": "jwt",
-  "refresh_token": "opaque-token",
-  "expires_in": 1800
+  "access_token": "new_jwt_token",
+  "refresh_token": "new_refresh_token",
+  "expires_in": 900
+}
+```
+
+Jika refresh token invalid → 401.
+
+---
+
+## 3️⃣ Logout
+
+### POST `/auth/logout`
+
+Header:
+
+```
+Authorization: Bearer <access_token>
+```
+
+Request:
+
+```json
+{
+  "refresh_token": "refresh_token"
+}
+```
+
+Action:
+
+- Revoke refresh token
+- Insert audit log
+
+Response:
+
+```
+204 No Content
+```
+
+---
+
+# 🔐 Protected Endpoints (Require Access Token)
+
+Semua endpoint berikut memerlukan:
+
+```
+Authorization: Bearer <access_token>
+```
+
+---
+
+# 🏫 Tenant Management
+
+## Create Tenant (SUPER_ADMIN only)
+
+### POST `/tenants`
+
+```json
+{
+  "name": "SMA Negeri 1",
+  "address": "Jakarta",
+  "status": "active"
+}
+```
+
+Response:
+
+```json
+{
+  "id": "tenant_uuid",
+  "name": "SMA Negeri 1",
+  "status": "active"
 }
 ```
 
 ---
 
-### POST /refresh
+## Suspend Tenant (SUPER_ADMIN)
 
-- Mengganti access token
-- Refresh token **WAJIB valid & belum direvoke**
-
----
-
-### POST /tenants
-
-- Buat tenant (SUPER_ADMIN only)
+### PATCH `/tenants/{id}/suspend`
 
 ---
 
-### POST /users
+# 👤 User Management
 
-- Buat user dalam tenant
+## Create User
+
+### POST `/users`
+
+```json
+{
+  "email": "bendahara@sekolah.id",
+  "password": "password123",
+  "role_id": "uuid",
+  "tenant_id": "uuid"
+}
+```
+
+Rules:
+
+- SUPER_ADMIN bisa buat user lintas tenant
+- ADMIN_SEKOLAH hanya bisa buat user dalam tenant sendiri
 
 ---
 
-## 🗄️ Database Design
+## Update User
 
-### auth_db Tables
-
-#### tenants
-
-- id
-- name
-- status (ACTIVE | SUSPENDED | ARCHIVED)
+### PATCH `/users/{id}`
 
 ---
 
-#### users
+## Disable User
+
+### PATCH `/users/{id}/disable`
+
+Jika user disabled:
+
+- Refresh token invalidated
+- Access token tetap valid sampai expired
+
+---
+
+# 🏷 Role Management
+
+## Create Role
+
+### POST `/roles`
+
+```json
+{
+  "name": "BENDAHARA",
+  "tenant_id": "uuid"
+}
+```
+
+Role bisa:
+
+- Global (tenant_id null, only SUPER_ADMIN)
+- Tenant-specific
+
+---
+
+## Assign Permission to Role
+
+### POST `/roles/{id}/permissions`
+
+```json
+{
+  "permissions": ["realization:create", "report:view"]
+}
+```
+
+---
+
+# 🔑 Permission Management
+
+## Create Permission (SUPER_ADMIN)
+
+### POST `/permissions`
+
+```json
+{
+  "name": "realization:create",
+  "description": "Create realization transaction"
+}
+```
+
+Permissions global, tidak tenant-specific.
+
+---
+
+# 📜 Audit Log
+
+## Get Audit Logs
+
+### GET `/audit-logs`
+
+Filter:
+
+```
+?tenant_id=
+?user_id=
+?from=
+?to=
+```
+
+Audit Log Fields:
 
 - id
 - tenant_id
-- email
-- password_hash
-- status
-
----
-
-#### roles
-
-- id
-- name
-- scope (SYSTEM | TENANT)
-
----
-
-#### permissions
-
-- id
-- code
-- description
-
----
-
-#### role_permissions
-
-- role_id
-- permission_id
-
----
-
-#### user_roles
-
 - user_id
-- role_id
-
----
-
-#### refresh_tokens
-
-- token
-- user_id
-- tenant_id
-- expires_at
-- revoked_at
-
----
-
-#### audit_logs
-
-Digunakan untuk **traceability & compliance**.
-
-Field:
-
-- id
-- actor_id
-- tenant_id
 - action
-- target
-- metadata (JSON)
+- resource
+- ip_address
 - created_at
 
-Contoh action:
+---
 
-- USER_CREATED
-- ROLE_ASSIGNED
-- TENANT_SUSPENDED
+# 🧠 Authorization Rules (Auth Service)
+
+| Endpoint                 | Required Role               |
+| ------------------------ | --------------------------- |
+| Create Tenant            | SUPER_ADMIN                 |
+| Suspend Tenant           | SUPER_ADMIN                 |
+| Create Global Permission | SUPER_ADMIN                 |
+| Create Role (Tenant)     | ADMIN_SEKOLAH               |
+| Create User              | ADMIN_SEKOLAH               |
+| View Audit Log           | SUPER_ADMIN / ADMIN_SEKOLAH |
 
 ---
 
-## 🐳 Container
+# 🔄 Interaction with ARKAS
 
-### Docker Compose (Ready to Run)
+## Flow:
 
-```yaml
-version: "3.9"
+1. Client login ke Auth
+2. Auth issue JWT
+3. Client kirim JWT ke Gateway
+4. Gateway forward ke ARKAS
+5. ARKAS verify JWT signature
+6. ARKAS cek permission
 
-services:
-  auth-service:
-    build: .
-    ports:
-      - "8001:8000"
-    environment:
-      - DB_HOST=auth-db
-      - DB_NAME=auth_db
-      - DB_USER=postgres
-      - DB_PASS=postgres
-    depends_on:
-      - auth-db
+Auth tidak dipanggil saat request ARKAS berlangsung.
 
-  auth-db:
-    image: postgres:15
-    environment:
-      POSTGRES_DB: auth_db
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-    ports:
-      - "5433:5432"
+---
+
+# 🛡 Security Design
+
+- RS256 key pair
+- Public key exposed at:
+
+```
+GET /.well-known/jwks.json
+```
+
+- Refresh token disimpan hashed di database
+- Token rotation recommended
+- Access token short-lived
+
+---
+
+# 🚫 Anti-Pattern
+
+- Shared database antar service
+- Call Auth setiap request ARKAS
+- Simpan permission di ARKAS
+- Hardcode role di service lain
+
+---
+
+# 📦 Error Format Standard
+
+Semua error:
+
+```json
+{
+  "error": "error_code",
+  "message": "human readable message"
+}
 ```
 
 ---
 
-## ▶️ Cara Menjalankan
+# 📈 Future Expansion
 
-```bash
-docker compose up --build
-```
-
-Auth Service tersedia di:
-
-```
-http://localhost:8001
-```
+- SSO support
+- OAuth2 provider
+- Service-to-service token
+- Key rotation
+- Multi-region tenant
 
 ---
 
-## 🚫 Anti-Pattern (DILARANG)
+# 🎯 Boundary Summary
 
-- Menaruh permission detail di JWT
-- Share database dengan service lain
-- SUPER_ADMIN dipakai user sekolah
-- Tidak mencatat audit log
-- Refresh token dikirim ke service lain
+Auth bertanggung jawab atas:
 
----
+- Identity
+- Role
+- Permission
+- Token lifecycle
 
-## 🎯 Target Pembelajaran
+ARKAS bertanggung jawab atas:
 
-Dengan auth-service ini:
-
-- Boundary microservice jelas
-- Token lifecycle dipahami
-- Role ≠ Permission
-- Sistem siap dikembangkan ke ARKAS & modul lain
-
----
-
-## 📝 Catatan Akhir
-
-Auth Service ini **dibuat untuk tumbuh**,
-bukan untuk cepat-cepat jadi demo.
-
-Kalau auth rapi,
-service lain boleh ribet — sistem tetap hidup.
+- Business authorization
+- Financial rule enforcement
+- Tenant data isolation

@@ -59,8 +59,8 @@ func NewServer() *Server {
 	//init repository
 	repo_user := repository.NewUserRepository(db)
 	repo_audit_log := repository.NewAuditLogRepository(db)
-	// := repository.NewPermissionRepository(db)
 	repo_role := repository.NewRoleRepository(db)
+	repo_permission := repository.NewPermissionRepository(db)
 	repo_tenant := repository.NewTenantRepository(db)
 	repo_user_role := repository.NewUserRoleRepository(db)
 	repo_refresh_token := repository.NewRefreshTokenRepository(db)
@@ -68,7 +68,9 @@ func NewServer() *Server {
 	// init usecase
 	authUseCase := usecase.NewAuthUseCase(
 		repo_user,
+		repo_tenant,
 		repo_role,
+		repo_permission,
 		repo_user_role,
 		repo_refresh_token,
 		repo_audit_log,

@@ -8,6 +8,7 @@ import (
 type Tenant struct {
 	ID        string    `db:"id"`
 	Name      string    `db:"name"`
+	Address   string    `db:"address"`
 	Status    string    `db:"status"` // ACTIVE, SUSPENDED, ARCHIVED
 	CreatedAt time.Time `db:"created_at"`
 	UpdatedAt time.Time `db:"updated_at"`

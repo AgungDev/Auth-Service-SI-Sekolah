@@ -58,10 +58,10 @@ func (c *Config) readConfig() error {
 	}
 
 	c.TokenConfig = TokenConfig{
-		AplicationName:      "Enigma Camp",
+		AplicationName:      "auth-service",
 		JwtSignatureKey:     []byte(getEnv("JWT_SECRET", "your-secret-key-change-this-in-production")),
 		JwtSigningMethod:    jwt.SigningMethodHS256,
-		AccessTokenLifeTime: getEnvAsInt("JWT_EXPIRY", 1800),
+		AccessTokenLifeTime: getEnvAsInt("JWT_EXPIRY", 900),
 		RefreshTokenExpiry:  getEnvAsInt("REFRESH_TOKEN_EXPIRY", 604800),
 	}
 
@@ -77,51 +77,6 @@ func NewConfig() (*Config, error) {
 
 	return cfg, nil
 }
-
-// type Config struct {
-// 	// Database
-// 	DBHost string
-// 	DBPort string
-// 	DBName string
-// 	DBUser string
-// 	DBPass string
-
-// 	// Server
-// 	Port string
-
-// 	// JWT
-// 	JWTSecret            string
-// 	JWTExpiry            int
-// 	RefreshTokenExpiry   int
-
-// 	// Environment
-// 	Environment string
-// }
-
-// Load loads the configuration from environment variables
-// func Load() *Config {
-// 	// Try to load .env file, ignore if not found
-// 	godotenv.Load()
-
-// 	return &Config{
-// 		DBHost: getEnv("DB_HOST", "localhost"),
-// 		DBPort: getEnv("DB_PORT", "5433"),
-// 		DBName: getEnv("DB_NAME", "auth_db"),
-// 		DBUser: getEnv("DB_USER", "postgres"),
-// 		DBPass: getEnv("DB_PASS", "postgres"),
-// 		Port:   getEnv("PORT", "8000"),
-// 		JWTSecret: getEnv("JWT_SECRET", "your-secret-key-change-this-in-production"),
-// 		JWTExpiry: getEnvAsInt("JWT_EXPIRY", 1800),
-// 		RefreshTokenExpiry: getEnvAsInt("REFRESH_TOKEN_EXPIRY", 604800),
-// 		Environment: getEnv("ENVIRONMENT", "development"),
-// 	}
-// }
-
-// GetDSN returns the database connection string
-// func (c *Config) GetDSN() string {
-// 	return fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
-// 		c.DBHost, c.DBPort, c.DBUser, c.DBPass, c.DBName)
-// }
 
 func getEnv(key string, defaultVal string) string {
 	if value, exists := os.LookupEnv(key); exists {

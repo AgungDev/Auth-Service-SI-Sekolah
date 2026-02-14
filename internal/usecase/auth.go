@@ -20,6 +20,7 @@ type AuthUseCaseInterface interface {
 	Login(ctx context.Context, req dto.LoginRequestBody) (*dto.LoginResponse, error)
 	RefreshToken(ctx context.Context, req dto.RefreshTokenRequestBody) (*dto.LoginResponse, error)
 	CreateUser(ctx context.Context, req dto.CreateUserRequestBody) (*entity.User, error)
+	Logout(ctx context.Context, actorID, refreshToken string) error
 }
 
 // AuthUseCase handles authentication logic
@@ -27,6 +28,7 @@ type authUseCase struct {
 	userRepo           repository.UserRepository
 	tenantRepo         repository.TenantRepository
 	roleRepo           repository.RoleRepository
+	permissionRepo     repository.PermissionRepository
 	userRoleRepo       repository.UserRoleRepository
 	refreshTokenRepo   repository.RefreshTokenRepository
 	auditLogRepo       repository.AuditLogRepository
@@ -37,7 +39,9 @@ type authUseCase struct {
 // NewAuthUseCase creates a new auth usecase
 func NewAuthUseCase(
 	userRepo repository.UserRepository,
+	tenantRepo repository.TenantRepository,
 	roleRepo repository.RoleRepository,
+	permissionRepo repository.PermissionRepository,
 	userRoleRepo repository.UserRoleRepository,
 	refreshTokenRepo repository.RefreshTokenRepository,
 	auditLogRepo repository.AuditLogRepository,
@@ -46,7 +50,9 @@ func NewAuthUseCase(
 ) AuthUseCaseInterface {
 	return &authUseCase{
 		userRepo:           userRepo,
+		tenantRepo:         tenantRepo,
 		roleRepo:           roleRepo,
+		permissionRepo:     permissionRepo,
 		userRoleRepo:       userRoleRepo,
 		refreshTokenRepo:   refreshTokenRepo,
 		auditLogRepo:       auditLogRepo,
@@ -57,6 +63,29 @@ func NewAuthUseCase(
 
 // Login handles user login
 func (u *authUseCase) Login(ctx context.Context, req dto.LoginRequestBody) (*dto.LoginResponse, error) {
+	// Defensive checks to avoid nil-interface panics when running in different environments
+	if u == nil {
+		return nil, errors.New("internal error")
+	}
+	// Report which dependency is missing to aid debugging
+	if u.userRepo == nil {
+		return nil, errors.New("missing userRepo")
+	}
+	if u.tenantRepo == nil {
+		return nil, errors.New("missing tenantRepo")
+	}
+	if u.roleRepo == nil {
+		return nil, errors.New("missing roleRepo")
+	}
+	if u.refreshTokenRepo == nil {
+		return nil, errors.New("missing refreshTokenRepo")
+	}
+	if u.auditLogRepo == nil {
+		return nil, errors.New("missing auditLogRepo")
+	}
+	if u.jwtService == nil {
+		return nil, errors.New("missing jwtService")
+	}
 	// Get user by email and tenant
 	user, err := u.userRepo.GetUserByEmail(ctx, req.Email, req.TenantID)
 	if err != nil {
@@ -64,6 +93,9 @@ func (u *authUseCase) Login(ctx context.Context, req dto.LoginRequestBody) (*dto
 	}
 
 	// Check password
+	if user.PasswordHash == "" {
+		return nil, errors.New("invalid credentials")
+	}
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
 		return nil, errors.New("invalid credentials")
 	}
@@ -90,8 +122,22 @@ func (u *authUseCase) Login(ctx context.Context, req dto.LoginRequestBody) (*dto
 		return nil, err
 	}
 
+	// Aggregate permissions for all roles (permissionRepo may be nil in some setups)
+	permissions := []string{}
+	if u.permissionRepo != nil {
+		for _, r := range roles {
+			perms, err := u.permissionRepo.GetPermissionsByRoleID(ctx, r.ID)
+			if err != nil {
+				return nil, err
+			}
+			for _, p := range perms {
+				permissions = append(permissions, p.Code)
+			}
+		}
+	}
+
 	// Generate access token
-	accessToken, err := u.jwtService.GenerateAccessToken(user, roles, tenant)
+	accessToken, err := u.jwtService.GenerateAccessToken(user, roles, tenant, permissions)
 	if err != nil {
 		return nil, err
 	}
@@ -127,7 +173,7 @@ func (u *authUseCase) Login(ctx context.Context, req dto.LoginRequestBody) (*dto
 	return &dto.LoginResponse{
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
-		ExpiresIn:    1800, // 30 minutes
+		ExpiresIn:    u.jwtService.AccessTokenLifeTime(),
 	}, nil
 }
 
@@ -167,8 +213,22 @@ func (u *authUseCase) RefreshToken(ctx context.Context, req dto.RefreshTokenRequ
 		return nil, err
 	}
 
+	// Aggregate permissions for roles (permissionRepo may be nil)
+	permissions := []string{}
+	if u.permissionRepo != nil {
+		for _, r := range roles {
+			perms, err := u.permissionRepo.GetPermissionsByRoleID(ctx, r.ID)
+			if err != nil {
+				return nil, err
+			}
+			for _, p := range perms {
+				permissions = append(permissions, p.Code)
+			}
+		}
+	}
+
 	// Generate new access token
-	accessToken, err := u.jwtService.GenerateAccessToken(user, roles, tenant)
+	accessToken, err := u.jwtService.GenerateAccessToken(user, roles, tenant, permissions)
 	if err != nil {
 		return nil, err
 	}
@@ -199,7 +259,7 @@ func (u *authUseCase) RefreshToken(ctx context.Context, req dto.RefreshTokenRequ
 	return &dto.LoginResponse{
 		AccessToken:  accessToken,
 		RefreshToken: newRefreshToken,
-		ExpiresIn:    1800,
+		ExpiresIn:    u.jwtService.AccessTokenLifeTime(),
 	}, nil
 }
 
@@ -257,4 +317,24 @@ func (u *authUseCase) generateRefreshToken() (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(b), nil
+}
+
+// Logout revokes the provided refresh token and records an audit log
+func (u *authUseCase) Logout(ctx context.Context, actorID, refreshToken string) error {
+	// Revoke the refresh token
+	if err := u.refreshTokenRepo.RevokeRefreshToken(ctx, refreshToken); err != nil {
+		return err
+	}
+
+	// Record audit log
+	u.auditLogRepo.CreateAuditLog(ctx, &entity.AuditLog{
+		ID:       uuid.New().String(),
+		ActorID:  actorID,
+		TenantID: "",
+		Action:   "USER_LOGOUT",
+		Target:   refreshToken,
+		CreatedAt: time.Now(),
+	})
+
+	return nil
 }

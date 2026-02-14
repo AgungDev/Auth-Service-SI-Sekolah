@@ -19,8 +19,9 @@ func NewJwtService(myConfig config.TokenConfig) JwtServiceImpl {
 }
 
 type JwtServiceImpl interface {
-	GenerateAccessToken(user *entity.User, roles []*entity.Role, tenant *entity.Tenant) (string, error)
+	GenerateAccessToken(user *entity.User, roles []*entity.Role, tenant *entity.Tenant, permissions []string) (string, error)
 	VerifyAccessToken(token string) (*entity.AccessTokenClaims, error)
+	AccessTokenLifeTime() int
 }
 
 // JWTServiceImpl handles JWT operations
@@ -42,20 +43,29 @@ type jWTServiceImpl struct {
 // }
 
 // GenerateAccessToken generates a JWT access token
-func (s *jWTServiceImpl) GenerateAccessToken(user *entity.User, roles []*entity.Role, tenant *entity.Tenant) (string, error) {
-	roleNames := make([]string, len(roles))
-	for i, role := range roles {
-		roleNames[i] = role.Name
+func (s *jWTServiceImpl) GenerateAccessToken(user *entity.User, roles []*entity.Role, tenant *entity.Tenant, permissions []string) (string, error) {
+	// determine primary role (use first role if present)
+	primaryRole := ""
+	isSuper := false
+	if len(roles) > 0 {
+		primaryRole = roles[0].Name
+		for _, r := range roles {
+			if r.Name == "SUPER_ADMIN" || r.Name == "super-admin" {
+				isSuper = true
+				break
+			}
+		}
 	}
 
 	claims := jwt.MapClaims{
-		"sub":           user.ID,
-		"tenant_id":     tenant.ID,
-		"email":         user.Email,
-		"roles":         roleNames,
-		"tenant_status": tenant.Status,
-		"exp":           time.Now().Add(time.Duration(s.cfg.AccessTokenLifeTime) * time.Second).Unix(),
-		"iat":           time.Now().Unix(),
+		"sub":            user.ID,
+		"tenant_id":      tenant.ID,
+		"role":           primaryRole,
+		"permissions":    permissions,
+		"is_super_admin": isSuper,
+		"exp":            time.Now().Add(time.Duration(s.cfg.AccessTokenLifeTime) * time.Second).Unix(),
+		"iat":            time.Now().Unix(),
+		"iss":            s.cfg.AplicationName,
 	}
 
 	token := jwt.NewWithClaims(s.cfg.JwtSigningMethod, claims)
@@ -69,7 +79,7 @@ func (s *jWTServiceImpl) VerifyAccessToken(tokenString string) (*entity.AccessTo
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
-		return []byte(s.cfg.JwtSignatureKey), nil
+		return s.cfg.JwtSignatureKey, nil
 	})
 
 	if err != nil {
@@ -85,18 +95,25 @@ func (s *jWTServiceImpl) VerifyAccessToken(tokenString string) (*entity.AccessTo
 		return nil, ErrInvalidToken
 	}
 
-	// Extract roles as interface slice then convert to string slice
-	rolesInterface, ok := claims["roles"].([]interface{})
-	roles := make([]string, len(rolesInterface))
-	if ok {
-		for i, v := range rolesInterface {
-			if roleStr, ok := v.(string); ok {
-				roles[i] = roleStr
+	// Extract role
+	roleStr, _ := claims["role"].(string)
+
+	// Extract permissions
+	perms := []string{}
+	if pi, ok := claims["permissions"].([]interface{}); ok {
+		for _, v := range pi {
+			if ps, ok := v.(string); ok {
+				perms = append(perms, ps)
 			}
 		}
 	}
 
-	// Safely extract string claims with type checking
+	// is_super_admin
+	isSuper := false
+	if v, ok := claims["is_super_admin"].(bool); ok {
+		isSuper = v
+	}
+
 	sub, ok := claims["sub"].(string)
 	if !ok {
 		return nil, fmt.Errorf("invalid sub claim")
@@ -107,29 +124,29 @@ func (s *jWTServiceImpl) VerifyAccessToken(tokenString string) (*entity.AccessTo
 		return nil, fmt.Errorf("invalid tenant_id claim")
 	}
 
-	email, ok := claims["email"].(string)
-	if !ok {
-		return nil, fmt.Errorf("invalid email claim")
-	}
-
-	tenantStatus, ok := claims["tenant_status"].(string)
-	if !ok {
-		return nil, fmt.Errorf("invalid tenant_status claim")
-	}
-
 	exp, ok := claims["exp"].(float64)
 	if !ok {
 		return nil, fmt.Errorf("invalid exp claim")
 	}
 
+	iat, _ := claims["iat"].(float64)
+
+	issuer, _ := claims["iss"].(string)
+
 	return &entity.AccessTokenClaims{
 		Sub:          sub,
 		TenantID:     tenantID,
-		Email:        email,
-		Roles:        roles,
-		TenantStatus: tenantStatus,
+		Role:         roleStr,
+		Permissions:  perms,
+		IsSuperAdmin: isSuper,
 		ExpiresAt:    int64(exp),
+		IssuedAt:     int64(iat),
+		Issuer:       issuer,
 	}, nil
+}
+
+func (s *jWTServiceImpl) AccessTokenLifeTime() int {
+	return s.cfg.AccessTokenLifeTime
 }
 
 // RoleUseCase handles role operations

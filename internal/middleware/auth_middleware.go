@@ -41,19 +41,23 @@ func (a *authMiddleware) RequiredToken(roles ...string) gin.HandlerFunc {
 
 		ctx.Set("user", tokenClaim)
 
-		// Check if the user has the required role
-		validRole := false
-		for _, role := range roles {
-			if contains(tokenClaim.Roles, role) {
-				validRole = true
-				break
+		// If roles are provided, check if the user has one of the required roles.
+		// If no roles are provided, treat this as "any authenticated user".
+		if len(roles) > 0 {
+			validRole := false
+			for _, roleReq := range roles {
+				// Accept if user's primary role matches or user is super admin
+				if tokenClaim.Role == roleReq || tokenClaim.IsSuperAdmin {
+					validRole = true
+					break
+				}
 			}
-		}
 
-		if !validRole {
-			ctx.JSON(http.StatusForbidden, gin.H{"error": "You do not have permission to access this resource"})
-			ctx.Abort()
-			return
+			if !validRole {
+				ctx.JSON(http.StatusForbidden, gin.H{"error": "You do not have permission to access this resource"})
+				ctx.Abort()
+				return
+			}
 		}
 
 		// Inject tenant_id into context for tenant isolation

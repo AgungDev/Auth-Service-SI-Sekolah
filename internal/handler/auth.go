@@ -24,6 +24,8 @@ func (h *AuthHandler) Routes() {
     // Grup publik tanpa middleware
     h.rg.POST("/login", h.Login)
     h.rg.POST("/refresh", h.RefreshToken)
+	// Logout requires a valid access token (any authenticated user)
+	h.rg.POST("/logout", h.mid.RequiredToken(), h.Logout)
     h.rg.GET("/health", h.Health)
 
     // Grup untuk route yang membutuhkan token TENANT_ADMIN atau SUPER_ADMIN
@@ -132,6 +134,41 @@ func (h *AuthHandler) CreateUser(ctx *gin.Context) {
 		Message: "User created successfully",
 		Data:    user,
 	})
+}
+
+// Logout handles POST /logout
+func (h *AuthHandler) Logout(ctx *gin.Context) {
+	if ctx.Request.Method != http.MethodPost {
+		ctx.JSON(http.StatusMethodNotAllowed, dto.ErrorResponse{Error: "Method not allowed"})
+		return
+	}
+
+	// Get user info from context (injected by middleware)
+	userClaims, exists := ctx.Get("user")
+	if !exists {
+		ctx.JSON(http.StatusUnauthorized, dto.ErrorResponse{Error: "User not found in context"})
+		return
+	}
+
+	claims := userClaims.(*entity.AccessTokenClaims)
+
+	var req dto.RefreshTokenRequestBody
+	if err := ctx.ShouldBind(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, dto.ErrorResponse{Error: "Invalid request body"})
+		return
+	}
+
+	if req.RefreshToken == "" {
+		ctx.JSON(http.StatusBadRequest, dto.ErrorResponse{Error: "refresh_token is required"})
+		return
+	}
+
+	if err := h.authUseCase.Logout(ctx, claims.Sub, req.RefreshToken); err != nil {
+		ctx.JSON(http.StatusInternalServerError, dto.ErrorResponse{Error: err.Error()})
+		return
+	}
+
+	ctx.Status(http.StatusNoContent)
 }
 
 // Health handles GET /health

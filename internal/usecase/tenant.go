@@ -37,7 +37,8 @@ func (u *tenantUseCase) CreateTenant(ctx context.Context, req dto.CreateTenantRe
 	tenant := &entity.Tenant{
 		ID:        uuid.New().String(),
 		Name:      req.Name,
-		Status:    "ACTIVE",
+		Address:   req.Address,
+		Status:    func() string { if req.Status != "" { return req.Status }; return "ACTIVE" }(),
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
