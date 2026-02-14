@@ -19,6 +19,9 @@ type Server struct {
 	// server fields
 	authUseCase usecase.AuthUseCaseInterface
 	tenantUseCase usecase.TenantUseCaseInterface
+	userUseCase usecase.UserUseCaseInterface
+	roleUseCase usecase.RoleUseCaseInterface
+	permissionUseCase usecase.PermissionUseCaseInterface
 	engine      *gin.Engine
 	host        string
 	jwtService  service.JwtServiceImpl
@@ -30,6 +33,9 @@ func (s *Server) initRoute() {
 	midware := middleware.NewAuthMiddleware(s.jwtService)
 	handler.NewAuthHandler(s.authUseCase, s.jwtService, apiGroup, midware).Routes()
 	handler.NewTenantHandler(s.tenantUseCase, s.jwtService, apiGroup, midware).Routes()
+	handler.NewUserHandler(s.userUseCase, s.jwtService, apiGroup, midware).Routes()
+	handler.NewRoleHandler(s.roleUseCase, s.jwtService, apiGroup, midware).Routes()
+	handler.NewPermissionHandler(s.permissionUseCase, s.jwtService, apiGroup, midware).Routes()
 
 }
 
@@ -83,6 +89,26 @@ func NewServer() *Server {
 		repo_audit_log,
 	)
 
+	userUseCase := usecase.NewUserUseCase(
+		repo_user,
+		repo_user_role,
+		repo_refresh_token,
+		repo_audit_log,
+	)
+
+	rolePermissionRepo := repository.NewRolePermissionRepository(db)
+	roleUseCase := usecase.NewRoleUseCase(
+		repo_role,
+		repo_permission,
+		rolePermissionRepo,
+		repo_audit_log,
+	)
+
+	permissionUseCase := usecase.NewPermissionUseCase(
+		repo_permission,
+		repo_audit_log,
+	)
+
 	// HTTP Init
 	host := fmt.Sprintf(":%s", cfg.ApiPort)
 	engine := gin.New()
@@ -92,6 +118,9 @@ func NewServer() *Server {
 	return &Server{
 		authUseCase: authUseCase,
 		tenantUseCase: tenantUseCase,
+		userUseCase: userUseCase,
+		roleUseCase: roleUseCase,
+		permissionUseCase: permissionUseCase,
 		engine:      engine,
 		host:        host,
 		jwtService:  jwtService,

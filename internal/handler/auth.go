@@ -23,6 +23,7 @@ type AuthHandler struct {
 func (h *AuthHandler) Routes() {
     // Grup publik tanpa middleware
     h.rg.POST("/login", h.Login)
+    h.rg.POST("/register", h.Register)
     h.rg.POST("/refresh", h.RefreshToken)
 	// Logout requires a valid access token (any authenticated user)
 	h.rg.POST("/logout", h.mid.RequiredToken(), h.Logout)
@@ -68,6 +69,48 @@ func (h *AuthHandler) Login(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, resp)
+}
+
+// Register handles POST /register
+func (h *AuthHandler) Register(ctx *gin.Context) {
+	if ctx.Request.Method != http.MethodPost {
+		ctx.JSON(http.StatusMethodNotAllowed, dto.ErrorResponse{Error: "Method not allowed"})
+		return
+	}
+
+	var req dto.RegisterRequestBody
+	err := ctx.ShouldBind(&req)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, dto.ErrorResponse{Error: "invalid_request", Message: "Invalid request body"})
+		return
+	}
+
+	// Validate required fields
+	if req.Email == "" {
+		ctx.JSON(http.StatusBadRequest, dto.ErrorResponse{Error: "invalid_request", Message: "email is required"})
+		return
+	}
+	if req.Password == "" {
+		ctx.JSON(http.StatusBadRequest, dto.ErrorResponse{Error: "invalid_request", Message: "password is required"})
+		return
+	}
+	if req.TenantID == "" {
+		ctx.JSON(http.StatusBadRequest, dto.ErrorResponse{Error: "invalid_request", Message: "tenant_id is required"})
+		return
+	}
+
+	resp, err := h.authUseCase.Register(ctx, req)
+
+	if err != nil {
+		if err.Error() == "user already exists" {
+			ctx.JSON(http.StatusConflict, dto.ErrorResponse{Error: "conflict", Message: "user already exists"})
+			return
+		}
+		ctx.JSON(http.StatusBadRequest, dto.ErrorResponse{Error: err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusCreated, resp)
 }
 
 // RefreshToken handles POST /refresh

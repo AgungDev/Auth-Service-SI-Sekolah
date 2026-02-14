@@ -21,6 +21,7 @@ type AuthUseCaseInterface interface {
 	RefreshToken(ctx context.Context, req dto.RefreshTokenRequestBody) (*dto.LoginResponse, error)
 	CreateUser(ctx context.Context, req dto.CreateUserRequestBody) (*entity.User, error)
 	Logout(ctx context.Context, actorID, refreshToken string) error
+	Register(ctx context.Context, req dto.RegisterRequestBody) (*dto.LoginResponse, error)
 }
 
 // AuthUseCase handles authentication logic
@@ -337,4 +338,95 @@ func (u *authUseCase) Logout(ctx context.Context, actorID, refreshToken string) 
 	})
 
 	return nil
+}
+
+// Register creates a new user and returns login response with tokens
+func (u *authUseCase) Register(ctx context.Context, req dto.RegisterRequestBody) (*dto.LoginResponse, error) {
+	// Validate tenant exists
+	tenant, err := u.tenantRepo.GetTenantByID(ctx, req.TenantID)
+	if err != nil {
+		return nil, errors.New("tenant not found")
+	}
+
+	// Check tenant is active
+	if tenant.Status != "ACTIVE" {
+		return nil, errors.New("tenant is not active")
+	}
+
+	// Check if user already exists
+	existingUser, _ := u.userRepo.GetUserByEmail(ctx, req.Email, req.TenantID)
+	if existingUser != nil {
+		return nil, errors.New("user already exists")
+	}
+
+	// Hash password
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create user
+	user := &entity.User{
+		ID:           uuid.New().String(),
+		TenantID:     req.TenantID,
+		Email:        req.Email,
+		PasswordHash: string(hashedPassword),
+		Status:       "ACTIVE",
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
+	}
+
+	createdUser, err := u.userRepo.CreateUser(ctx, user)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get roles (empty for new user)
+	roles, err := u.roleRepo.GetRolesByUserID(ctx, createdUser.ID)
+	if err != nil {
+		roles = []*entity.Role{}
+	}
+
+	// Aggregate permissions (empty for new user with no roles)
+	permissions := []string{}
+
+	// Generate access token
+	accessToken, err := u.jwtService.GenerateAccessToken(createdUser, roles, tenant, permissions)
+	if err != nil {
+		return nil, err
+	}
+
+	// Generate refresh token
+	refreshToken, err := u.generateRefreshToken()
+	if err != nil {
+		return nil, err
+	}
+
+	// Save refresh token to database
+	rt := &entity.RefreshToken{
+		Token:     refreshToken,
+		UserID:    createdUser.ID,
+		TenantID:  req.TenantID,
+		ExpiresAt: time.Now().Add(time.Duration(u.refreshTokenExpiry) * time.Second),
+		CreatedAt: time.Now(),
+	}
+	if err := u.refreshTokenRepo.SaveRefreshToken(ctx, rt); err != nil {
+		return nil, err
+	}
+
+	// Create audit log
+	u.auditLogRepo.CreateAuditLog(ctx, &entity.AuditLog{
+		ID:        uuid.New().String(),
+		ActorID:   createdUser.ID,
+		TenantID:  req.TenantID,
+		Action:    "USER_REGISTERED",
+		Target:    createdUser.ID,
+		CreatedAt: time.Now(),
+	})
+
+	return &dto.LoginResponse{
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
+		ExpiresIn:    u.jwtService.AccessTokenLifeTime(),
+	}, nil
 }
