@@ -29,19 +29,6 @@ type jWTServiceImpl struct {
 	cfg config.TokenConfig
 }
 
-// type JWTServiceImpl struct {
-// 	secretKey string
-// 	expiry    int
-// }
-
-// NewJWTService creates a new JWT service
-// func NewJWTService(secretKey string, expiry int) *JWTServiceImpl {
-// 	return &JWTServiceImpl{
-// 		secretKey: secretKey,
-// 		expiry:    expiry,
-// 	}
-// }
-
 // GenerateAccessToken generates a JWT access token
 func (s *jWTServiceImpl) GenerateAccessToken(user *entity.User, roles []*entity.Role, tenant *entity.Tenant, permissions []string) (string, error) {
 	// determine primary role (use first role if present)

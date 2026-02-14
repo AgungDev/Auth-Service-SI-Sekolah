@@ -26,6 +26,7 @@ func (h *TenantHandler) Routes() {
     superAdminGroup.Use(h.mid.RequiredToken("SUPER_ADMIN"))
     {
         superAdminGroup.POST("/tenants", h.CreateTenant)
+		superAdminGroup.PATCH("/tenants/:id/suspend", h.SuspendTenant)
     }
 }
 
@@ -99,4 +100,34 @@ func (h *TenantHandler) CreateTenant(ctx *gin.Context) {
 		Message: "Tenant created successfully",
 		Data:    tenant,
 	})
+}
+
+// SuspendTenant handles PATCH /tenants/:id/suspend
+func (h *TenantHandler) SuspendTenant(ctx *gin.Context) {
+	id := ctx.Param("id")
+	if id == "" {
+		ctx.JSON(http.StatusBadRequest, dto.ErrorResponse{Error: "invalid_request", Message: "tenant id is required"})
+		return
+	}
+
+	userClaims, exists := ctx.Get("user")
+	if !exists {
+		ctx.JSON(http.StatusUnauthorized, dto.ErrorResponse{Error: "unauthorized", Message: "user not found in context"})
+		return
+	}
+
+	claims := userClaims.(*entity.AccessTokenClaims)
+	actorID := claims.Sub
+
+	err := h.tenantUseCase.SuspendTenant(ctx, id, actorID)
+	if err != nil {
+		if err.Error() == "tenant not found" {
+			ctx.JSON(http.StatusNotFound, dto.ErrorResponse{Error: "not_found", Message: "tenant not found"})
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, dto.ErrorResponse{Error: err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, dto.SuccessResponse{Message: "Tenant suspended successfully"})
 }

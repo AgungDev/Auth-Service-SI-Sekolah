@@ -13,6 +13,7 @@ import (
 
 type TenantUseCaseInterface interface {
 	CreateTenant(ctx context.Context, req dto.CreateTenantRequestBody) (*entity.Tenant, error)
+	SuspendTenant(ctx context.Context, id string, actorID string) error
 }
 
 // TenantUseCase handles tenant-related logic
@@ -62,4 +63,34 @@ func (u *tenantUseCase) CreateTenant(ctx context.Context, req dto.CreateTenantRe
 	})
 
 	return createdTenant, nil
+}
+
+// SuspendTenant sets the tenant status to SUSPENDED and records an audit log
+func (u *tenantUseCase) SuspendTenant(ctx context.Context, id string, actorID string) error {
+	// check tenant exists
+	t, err := u.tenantRepo.GetTenantByID(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	if t.Status == "SUSPENDED" {
+		return nil
+	}
+
+	if err := u.tenantRepo.UpdateTenantStatus(ctx, id, "SUSPENDED"); err != nil {
+		return err
+	}
+
+	// create audit log
+	u.auditLogRepo.CreateAuditLog(ctx, &entity.AuditLog{
+		ID:        uuid.New().String(),
+		ActorID:   actorID,
+		TenantID:  id,
+		Action:    "TENANT_SUSPENDED",
+		Target:    id,
+		Metadata:  map[string]interface{}{"previous_status": t.Status},
+		CreatedAt: time.Now(),
+	})
+
+	return nil
 }
