@@ -18,6 +18,7 @@ import (
 type Server struct {
 	// server fields
 	authUseCase usecase.AuthUseCaseInterface
+	tenantUseCase usecase.TenantUseCaseInterface
 	engine      *gin.Engine
 	host        string
 	jwtService  service.JwtServiceImpl
@@ -28,6 +29,7 @@ func (s *Server) initRoute() {
 	apiGroup := s.engine.Group("")
 	midware := middleware.NewAuthMiddleware(s.jwtService)
 	handler.NewAuthHandler(s.authUseCase, s.jwtService, apiGroup, midware).Routes()
+	handler.NewTenantHandler(s.tenantUseCase, s.jwtService, apiGroup, midware).Routes()
 
 }
 
@@ -66,7 +68,6 @@ func NewServer() *Server {
 	// init usecase
 	authUseCase := usecase.NewAuthUseCase(
 		repo_user,
-		repo_tenant,
 		repo_role,
 		repo_user_role,
 		repo_refresh_token,
@@ -75,7 +76,12 @@ func NewServer() *Server {
 		cfg.RefreshTokenExpiry,
 	)
 
-	// HTTTP Init
+	tenantUseCase := usecase.NewTenantUseCase(
+		repo_tenant,
+		repo_audit_log,
+	)
+
+	// HTTP Init
 	host := fmt.Sprintf(":%s", cfg.ApiPort)
 	engine := gin.New()
 	engine.Use(gin.Logger())
@@ -83,7 +89,8 @@ func NewServer() *Server {
 
 	return &Server{
 		authUseCase: authUseCase,
-		engine:      gin.Default(),
+		tenantUseCase: tenantUseCase,
+		engine:      engine,
 		host:        host,
 		jwtService:  jwtService,
 	}

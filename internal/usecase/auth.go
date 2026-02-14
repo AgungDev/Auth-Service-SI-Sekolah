@@ -19,7 +19,6 @@ import (
 type AuthUseCaseInterface interface {
 	Login(ctx context.Context, req dto.LoginRequestBody) (*dto.LoginResponse, error)
 	RefreshToken(ctx context.Context, req dto.RefreshTokenRequestBody) (*dto.LoginResponse, error)
-	CreateTenant(ctx context.Context, req dto.CreateTenantRequestBody) (*entity.Tenant, error)
 	CreateUser(ctx context.Context, req dto.CreateUserRequestBody) (*entity.User, error)
 }
 
@@ -38,7 +37,6 @@ type authUseCase struct {
 // NewAuthUseCase creates a new auth usecase
 func NewAuthUseCase(
 	userRepo repository.UserRepository,
-	tenantRepo repository.TenantRepository,
 	roleRepo repository.RoleRepository,
 	userRoleRepo repository.UserRoleRepository,
 	refreshTokenRepo repository.RefreshTokenRepository,
@@ -48,7 +46,6 @@ func NewAuthUseCase(
 ) AuthUseCaseInterface {
 	return &authUseCase{
 		userRepo:           userRepo,
-		tenantRepo:         tenantRepo,
 		roleRepo:           roleRepo,
 		userRoleRepo:       userRoleRepo,
 		refreshTokenRepo:   refreshTokenRepo,
@@ -204,37 +201,6 @@ func (u *authUseCase) RefreshToken(ctx context.Context, req dto.RefreshTokenRequ
 		RefreshToken: newRefreshToken,
 		ExpiresIn:    1800,
 	}, nil
-}
-
-// CreateTenant creates a new tenant
-func (u *authUseCase) CreateTenant(ctx context.Context, req dto.CreateTenantRequestBody) (*entity.Tenant, error) {
-	tenant := &entity.Tenant{
-		ID:        uuid.New().String(),
-		Name:      req.Name,
-		Status:    "ACTIVE",
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-	}
-
-	createdTenant, err := u.tenantRepo.CreateTenant(ctx, tenant)
-	if err != nil {
-		return nil, err
-	}
-
-	// Audit log
-	u.auditLogRepo.CreateAuditLog(ctx, &entity.AuditLog{
-		ID:       uuid.New().String(),
-		ActorID:  "system",
-		TenantID: createdTenant.ID,
-		Action:   "TENANT_CREATED",
-		Target:   createdTenant.ID,
-		Metadata: map[string]interface{}{
-			"tenant_name": createdTenant.Name,
-		},
-		CreatedAt: time.Now(),
-	})
-
-	return createdTenant, nil
 }
 
 // CreateUser creates a new user

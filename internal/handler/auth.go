@@ -26,13 +26,6 @@ func (h *AuthHandler) Routes() {
     h.rg.POST("/refresh", h.RefreshToken)
     h.rg.GET("/health", h.Health)
 
-    // Grup untuk route yang membutuhkan middleware token SUPER_ADMIN
-    superAdminGroup := h.rg.Group("/")
-    superAdminGroup.Use(h.mid.RequiredToken("SUPER_ADMIN"))
-    {
-        superAdminGroup.POST("/tenants", h.CreateTenant)
-    }
-
     // Grup untuk route yang membutuhkan token TENANT_ADMIN atau SUPER_ADMIN
     tenantAdminGroup := h.rg.Group("/")
     tenantAdminGroup.Use(h.mid.RequiredToken("TENANT_ADMIN", "SUPER_ADMIN"))
@@ -99,44 +92,6 @@ func (h *AuthHandler) RefreshToken(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, resp)
 }
 
-// CreateTenant handles POST /tenants
-// Note: Middleware already validates SUPER_ADMIN role
-func (h *AuthHandler) CreateTenant(ctx *gin.Context) {
-	if ctx.Request.Method != http.MethodPost {
-		ctx.JSON(http.StatusMethodNotAllowed, dto.ErrorResponse{Error: "Method not allowed"})
-		return
-	}
-
-	// Get user info from context (injected by middleware)
-	userClaims, exists := ctx.Get("user")
-	if !exists {
-		ctx.JSON(http.StatusUnauthorized, dto.ErrorResponse{Error: "User not found in context"})
-		return
-	}
-
-	_ = userClaims.(*entity.AccessTokenClaims)
-
-	var req dto.CreateTenantRequestBody
-	err := ctx.ShouldBind(&req)
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, dto.ErrorResponse{Error: "Invalid request body"})
-		return
-	}
-
-	tenant, err := h.authUseCase.CreateTenant(ctx, req)
-
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, dto.ErrorResponse{Error: err.Error()})
-		return
-	}
-
-	ctx.JSON(http.StatusCreated, dto.SuccessResponse{
-		Message: "Tenant created successfully",
-		Data:    tenant,
-	})
-}
-
-// CreateUser handles POST /users
 // Note: Middleware already validates TENANT_ADMIN or SUPER_ADMIN role
 func (h *AuthHandler) CreateUser(ctx *gin.Context) {
 	if ctx.Request.Method != http.MethodPost {
