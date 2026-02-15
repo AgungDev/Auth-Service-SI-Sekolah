@@ -12,7 +12,7 @@ import (
 type UserRepository interface {
 	CreateUser(ctx context.Context, user *entity.User) (*entity.User, error)
 	GetUserByID(ctx context.Context, id string) (*entity.User, error)
-	GetUserByEmail(ctx context.Context, email, tenantID string) (*entity.User, error)
+	GetUserByEmail(ctx context.Context, email string) (*entity.User, error)
 	GetAllUsers(ctx context.Context, tenantID string) ([]*entity.User, error)
 	GetAllUsersAll(ctx context.Context) ([]*entity.User, error)
 	UpdateUserStatus(ctx context.Context, id, status string) error
@@ -73,14 +73,14 @@ func (r *UserRepositoryImpl) GetUserByID(ctx context.Context, id string) (*entit
 }
 
 // GetUserByEmail gets a user by email and tenant ID
-func (r *UserRepositoryImpl) GetUserByEmail(ctx context.Context, email, tenantID string) (*entity.User, error) {
+func (r *UserRepositoryImpl) GetUserByEmail(ctx context.Context, email string) (*entity.User, error) {
 	query := `
 		SELECT id, tenant_id, email, password_hash, status, created_at, updated_at
 		FROM users
-		WHERE email = $1 AND tenant_id = $2
+		WHERE email = $1
 	`
 
-	row := r.db.QueryRowContext(ctx, query, email, tenantID)
+	row := r.db.QueryRowContext(ctx, query, email)
 	var user entity.User
 	err := row.Scan(&user.ID, &user.TenantID, &user.Email, &user.PasswordHash, &user.Status, &user.CreatedAt, &user.UpdatedAt)
 	if err != nil {

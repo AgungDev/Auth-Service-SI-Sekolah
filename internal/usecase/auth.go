@@ -88,7 +88,7 @@ func (u *authUseCase) Login(ctx context.Context, req dto.LoginRequestBody) (*dto
 		return nil, errors.New("missing jwtService")
 	}
 	// Get user by email and tenant
-	user, err := u.userRepo.GetUserByEmail(ctx, req.Email, req.TenantID)
+	user, err := u.userRepo.GetUserByEmail(ctx, req.Email)
 	if err != nil {
 		return nil, errors.New("invalid credentials")
 	}
@@ -107,7 +107,7 @@ func (u *authUseCase) Login(ctx context.Context, req dto.LoginRequestBody) (*dto
 	}
 
 	// Get tenant
-	tenant, err := u.tenantRepo.GetTenantByID(ctx, req.TenantID)
+	tenant, err := u.tenantRepo.GetTenantByID(ctx, user.TenantID)
 	if err != nil {
 		return nil, errors.New("tenant not found")
 	}
@@ -153,7 +153,7 @@ func (u *authUseCase) Login(ctx context.Context, req dto.LoginRequestBody) (*dto
 	rt := &entity.RefreshToken{
 		Token:     refreshToken,
 		UserID:    user.ID,
-		TenantID:  req.TenantID,
+		TenantID:  user.TenantID,
 		ExpiresAt: time.Now().Add(time.Duration(u.refreshTokenExpiry) * time.Second),
 		CreatedAt: time.Now(),
 	}
@@ -165,7 +165,7 @@ func (u *authUseCase) Login(ctx context.Context, req dto.LoginRequestBody) (*dto
 	u.auditLogRepo.CreateAuditLog(ctx, &entity.AuditLog{
 		ID:        uuid.New().String(),
 		ActorID:   user.ID,
-		TenantID:  req.TenantID,
+		TenantID:  user.TenantID,
 		Action:    "USER_LOGIN",
 		Target:    user.ID,
 		CreatedAt: time.Now(),
@@ -329,11 +329,11 @@ func (u *authUseCase) Logout(ctx context.Context, actorID, refreshToken string) 
 
 	// Record audit log
 	u.auditLogRepo.CreateAuditLog(ctx, &entity.AuditLog{
-		ID:       uuid.New().String(),
-		ActorID:  actorID,
-		TenantID: "",
-		Action:   "USER_LOGOUT",
-		Target:   refreshToken,
+		ID:        uuid.New().String(),
+		ActorID:   actorID,
+		TenantID:  "",
+		Action:    "USER_LOGOUT",
+		Target:    refreshToken,
 		CreatedAt: time.Now(),
 	})
 
@@ -354,7 +354,7 @@ func (u *authUseCase) Register(ctx context.Context, req dto.RegisterRequestBody)
 	}
 
 	// Check if user already exists
-	existingUser, _ := u.userRepo.GetUserByEmail(ctx, req.Email, req.TenantID)
+	existingUser, _ := u.userRepo.GetUserByEmail(ctx, req.Email)
 	if existingUser != nil {
 		return nil, errors.New("user already exists")
 	}
@@ -406,7 +406,7 @@ func (u *authUseCase) Register(ctx context.Context, req dto.RegisterRequestBody)
 	rt := &entity.RefreshToken{
 		Token:     refreshToken,
 		UserID:    createdUser.ID,
-		TenantID:  req.TenantID,
+		TenantID:  createdUser.TenantID,
 		ExpiresAt: time.Now().Add(time.Duration(u.refreshTokenExpiry) * time.Second),
 		CreatedAt: time.Now(),
 	}
@@ -418,7 +418,7 @@ func (u *authUseCase) Register(ctx context.Context, req dto.RegisterRequestBody)
 	u.auditLogRepo.CreateAuditLog(ctx, &entity.AuditLog{
 		ID:        uuid.New().String(),
 		ActorID:   createdUser.ID,
-		TenantID:  req.TenantID,
+		TenantID:  createdUser.TenantID,
 		Action:    "USER_REGISTERED",
 		Target:    createdUser.ID,
 		CreatedAt: time.Now(),

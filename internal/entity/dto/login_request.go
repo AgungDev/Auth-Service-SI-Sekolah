@@ -10,7 +10,6 @@ package dto
 type LoginRequestBody struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
-	TenantID string `json:"tenant_id"`
 }
 
 // RegisterRequestBody represents user registration input
