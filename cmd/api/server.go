@@ -22,6 +22,7 @@ type Server struct {
 	userUseCase usecase.UserUseCaseInterface
 	roleUseCase usecase.RoleUseCaseInterface
 	permissionUseCase usecase.PermissionUseCaseInterface
+	auditLogUseCase usecase.AuditLogUseCaseInterface
 	engine      *gin.Engine
 	host        string
 	jwtService  service.JwtServiceImpl
@@ -36,6 +37,7 @@ func (s *Server) initRoute() {
 	handler.NewUserHandler(s.userUseCase, s.jwtService, apiGroup, midware).Routes()
 	handler.NewRoleHandler(s.roleUseCase, s.jwtService, apiGroup, midware).Routes()
 	handler.NewPermissionHandler(s.permissionUseCase, s.jwtService, apiGroup, midware).Routes()
+	handler.NewAuditLogHandler(s.auditLogUseCase, s.jwtService, apiGroup, midware).Routes()
 
 }
 
@@ -109,6 +111,10 @@ func NewServer() *Server {
 		repo_audit_log,
 	)
 
+	auditLogUseCase := usecase.NewAuditLogUseCase(
+		repo_audit_log,
+	)
+
 	// HTTP Init
 	host := fmt.Sprintf(":%s", cfg.ApiPort)
 	engine := gin.New()
@@ -121,6 +127,7 @@ func NewServer() *Server {
 		userUseCase: userUseCase,
 		roleUseCase: roleUseCase,
 		permissionUseCase: permissionUseCase,
+		auditLogUseCase: auditLogUseCase,
 		engine:      engine,
 		host:        host,
 		jwtService:  jwtService,
